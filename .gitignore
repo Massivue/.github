@@ -1,0 +1,5 @@
+# Artifacts produced locally when work has to be handed over as files rather
+# than pushed to a remote. They are built from the repository's own contents,
+# so committing them here would be circular.
+*.bundle
+*.zip
