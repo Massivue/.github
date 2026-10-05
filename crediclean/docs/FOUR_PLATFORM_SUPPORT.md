@@ -63,15 +63,40 @@ else known.
 | Item | Finding |
 |---|---|
 | Domain | `gemini.google.com` — **vendor-documented** |
-| Image host | **Not confirmed.** Google does not document it. Expected on `*.googleusercontent.com` |
+| Image host | `lh3.googleusercontent.com` and similar — **confirmed by the product owner's test**, which reached a Google CDN address |
 | How images are shown | **Not confirmed.** Adapter targets `model-response` / `message-content` elements |
 | Retrieving the original | Same mechanism as ChatGPT, assuming the host is reachable — **not confirmed** |
 | Format | **Not confirmed** |
 | C2PA | Gemini-app images carry C2PA manifests — **vendor-documented** |
 | Other provenance | **SynthID**, an invisible pixel watermark — **vendor-documented** |
-| Detection | Implemented, **not confirmed** on the live site |
+| Detection | **Confirmed working** on the live site: the button appears and the panel opens |
 | Processing | Engine is shared with ChatGPT, so it will work on any C2PA file — **not confirmed** for Gemini files specifically |
 | Local only | Yes, by construction |
+
+### The resized-derivative problem, and the fix
+
+On 5 October 2026 a real Gemini image reported "No supported credentials
+found". Detection was working; retrieval was not.
+
+**Cause:** Google serves images through a resizing CDN. The address in the page
+ends with an options string such as `=w526-h296-rw`, asking for a particular
+width, height and format. What comes back is a **derivative** that the CDN
+re-encoded on the fly, and a re-encoded copy carries none of the original's
+C2PA manifest. Inspecting it will always report nothing found, however correct
+the credential engine is.
+
+**Fix:** the Gemini adapter now rewrites the options to `=s0`, which asks for
+the original at original resolution and format, and tries that first. The
+address from the page is kept as a fallback, so if the rewrite is ever wrong
+the extension behaves exactly as it did before rather than breaking.
+
+`=s0` is **an inference, not vendor-documented**. Google does not publish this
+as an API, though the convention is well established and widely corroborated.
+The fallback is what makes relying on it safe.
+
+A browser test reproduces the whole failure: the mock page shows a stripped
+derivative and serves the signed original only at `=s0`, so the test fails
+unless the adapter genuinely asks for the original.
 
 **The SynthID point, because it is the one most likely to mislead a user:**
 Google applies both C2PA metadata and SynthID. CrediClean removes the first.
@@ -79,9 +104,10 @@ The second stays in the pixels and Google's detector will still find it. This
 is expected and is not a failure of the removal. The adapter records this fact
 in `knownUnremovableProvenance` so the project cannot lose track of it.
 
-**Main risk:** the generated-image host is unconfirmed. If it is outside the
-permissions we requested, retrieval fails and the console logs the real host so
-the adapter can be corrected in one line.
+**Main remaining risk:** whether the `=s0` original itself carries C2PA. If
+Google strips credentials from everything its CDN serves, no address will have
+them and the correct answer really is "none found". The built-in diagnosis
+distinguishes these: see `docs/TROUBLESHOOTING.md`.
 
 ---
 

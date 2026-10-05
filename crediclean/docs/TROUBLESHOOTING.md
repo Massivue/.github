@@ -131,3 +131,53 @@ These logs stay on your machine. Nothing is sent anywhere.
 Upload it to [contentcredentials.org/verify](https://contentcredentials.org/verify).
 That service is run by the Content Authenticity Initiative, not by us, so it is
 an independent check on whether credentials are present.
+
+## "No supported credentials found" on an image that should have them
+
+This message has three very different causes that look identical from the
+outside. The extension can tell them apart for you.
+
+### Read the diagnosis
+
+1. On the page with the image, press **F12** and choose the **Console** tab.
+2. Click **Inspect credentials** on the image.
+3. Look for a collapsed line reading
+   `[CrediClean] No credentials found on <platform>. Click to see why.`
+4. Click it to expand.
+
+The **Interpretation** line tells you which of the three cases you are in.
+
+### Case 1: "the file we fetched contains no C2PA bytes at all"
+
+The file we read genuinely has nothing in it. Two possibilities:
+
+- **The original never had credentials.** Correct behaviour, nothing to fix.
+- **We fetched a resized copy.** Image services often serve a smaller,
+  re-encoded version of a picture, and re-encoding destroys the credentials.
+
+To tell which, compare the **Format / size** line in the diagnosis against the
+file you get by downloading the image from the site itself. If ours is smaller
+or has different dimensions, we read a derivative, not the original, and the
+adapter for that platform needs its address rewriting rule corrected.
+
+This is exactly what was happening on Gemini, and why the Gemini adapter now
+asks Google's CDN for the original with `=s0`.
+
+### Case 2: "PARSER PROBLEM"
+
+The file **does** contain C2PA byte markers but our engine did not parse a
+manifest from them. That is a bug in CrediClean, not in the site.
+
+Please report it with the full diagnosis object, which the console prints
+underneath. It contains the container block list, which is what is needed to
+find the fault.
+
+### Case 3: unsupported or unreadable format
+
+The diagnosis names the format. Version 0.2.0 reads PNG, JPEG and WebP.
+
+### What to send if you want it fixed
+
+The expanded diagnosis, and ideally the image file itself downloaded from the
+site's own download button. Inspecting the real bytes settles the question
+immediately.

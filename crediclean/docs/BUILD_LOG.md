@@ -171,6 +171,66 @@ Fixed with a ResizeObserver on the panel, which also covers the height changing
 between the ready, working and saved states. The explicit reposition after
 build keeps the first paint from visibly jumping.
 
+## Milestone 8: The Gemini retrieval fix
+
+**5 October 2026.** A real Gemini image reported "No supported credentials
+found". Detection was working: the button appeared and the panel opened. The
+problem was upstream of the credential engine.
+
+### Ruling things out first
+
+Two hypotheses were worth testing before touching any code.
+
+**Was the WebP path wrong?** Google serves a lot of WebP, and WebP was the one
+format whose chunk identifier had never been checked against anything
+authoritative. Resolved by reading the C2PA reference implementation's own
+source: `riff_io.rs` defines the chunk as `[0x43,0x32,0x50,0x41]`, which is
+ASCII `C2PA`, exactly what this extension uses. The same file confirmed PNG's
+`caBX`. So the format handling was not at fault, and WebP's status improved
+from "implemented from spec" to "identifier confirmed against the reference".
+
+**Were we reading the original file?** This turned out to be it.
+
+### Root cause
+
+Google serves images through a resizing CDN. The address in the page carries an
+options string such as `=w526-h296-rw`, and the CDN re-encodes the image to
+match. A re-encoded copy carries none of the original's C2PA manifest, so
+inspecting it reports nothing found however correct the engine is.
+
+### Fix
+
+The Gemini adapter rewrites the options to `=s0`, asking for the original, and
+offers it as the first candidate address. The page's own address is always kept
+as a fallback, so a wrong guess degrades to the previous behaviour instead of
+breaking retrieval. Grok's existing full-size rewrite moved to the same
+contract.
+
+The browser test reproduces the failure rather than describing it: the mock
+page shows a stripped derivative and serves the signed original only at `=s0`,
+so the test cannot pass unless the adapter really asks for the original.
+
+### A diagnosis, because this will happen again
+
+"No supported credentials found" has three causes that look identical: the file
+really has none, we read a re-encoded copy, or our parser missed them. The
+first is correct behaviour, the second is an adapter bug, the third is an
+engine bug.
+
+The extension now prints a diagnosis to the console whenever it finds nothing,
+scanning the raw bytes for the markers a C2PA manifest cannot exist without. If
+those bytes are present but no manifest was parsed, it says so explicitly and
+names itself as the culprit. This turns a future report of this symptom into a
+single console paste.
+
+### One thing fixed along the way
+
+A content-script fetch to a cross-origin CDN is subject to the page's CORS
+rules and essentially always fails, and it printed an alarming CORS error in
+the user's console before the service worker fallback quietly succeeded. Those
+addresses now go straight to the worker, which removes a wasted request and the
+noise.
+
 ## Where things stand
 
 **Working and verified:**
@@ -178,7 +238,7 @@ build keeps the first paint from visibly jumping.
 - Inspecting and removing credentials in PNG and JPEG, losslessly.
 - Independent confirmation of losslessness (ImageMagick, zero differing pixels).
 - The complete workflow in a real browser, through to a verified download.
-- 95 unit tests and 64 browser checks, all passing.
+- 119 unit tests, 64 ChatGPT browser checks and 61 four-platform checks, all passing.
 - Minimum permissions, checked against the code automatically.
 
 **Implemented but not verified:**

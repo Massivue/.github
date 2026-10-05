@@ -318,3 +318,99 @@ function readCborTextString(bytes, offset, limit) {
   if (/[\u0000-\u001f]/.test(text)) return null;
   return text;
 }
+
+
+/* ------------------------------------------------------------------------ */
+/* Diagnostics                                                               */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Explain WHY an image was reported the way it was.
+ *
+ * This exists because "no supported credentials found" has several very
+ * different causes, and from the outside they look identical:
+ *
+ *   a) the file genuinely has no credentials;
+ *   b) we fetched a resized or re-encoded copy, and the copy lost them;
+ *   c) the file has them somewhere our parser is not looking.
+ *
+ * Case (c) is a bug in us. Case (b) is a bug in the adapter. Case (a) is not a
+ * bug at all. The `rawMarkers` field below is what separates them: it scans
+ * the whole file for the byte sequences a C2PA manifest cannot exist without.
+ * If those bytes are present but `inspectImage` found no manifest, the parser
+ * is at fault. If they are absent, the file really has nothing in it.
+ *
+ * Goes to the developer console only. Never shown in the interface.
+ *
+ * @param {Uint8Array} bytes
+ * @returns {object} a technical report
+ */
+export function diagnoseImage(bytes) {
+  const report = inspectImage(bytes);
+  const diagnosis = {
+    byteLength: bytes ? bytes.length : 0,
+    format: report.format,
+    status: report.status,
+    dimensions: report.dimensions,
+    firstBytes: bytes ? [...bytes.subarray(0, 16)].map((b) => b.toString(16).padStart(2, '0')).join(' ') : '',
+    containerBlocks: [],
+    rawMarkers: {},
+    otherMetadata: report.otherMetadata.map((entry) => `${entry.kind} (${entry.bytes} bytes)`),
+    interpretation: '',
+  };
+
+  // What blocks does the container actually hold?
+  try {
+    if (report.format === FORMAT.PNG) {
+      const parsed = png.parsePngChunks(bytes);
+      diagnosis.containerBlocks = parsed.chunks.map((c) => `${c.type}:${c.dataLength}`);
+    } else if (report.format === FORMAT.JPEG) {
+      const parsed = jpeg.parseJpegSegments(bytes);
+      diagnosis.containerBlocks = parsed.segments.map(
+        (seg) => `FF${seg.marker.toString(16).toUpperCase()}:${seg.payloadLength}`,
+      );
+    } else if (report.format === FORMAT.WEBP) {
+      const parsed = webp.parseWebpChunks(bytes);
+      diagnosis.containerBlocks = parsed.chunks.map((c) => `${c.fourcc.trim()}:${c.dataLength}`);
+    }
+  } catch (error) {
+    diagnosis.containerBlocks = [`parse failed: ${error && error.message}`];
+  }
+
+  // Scan the raw bytes for sequences a C2PA manifest cannot exist without.
+  const haystack = bytes ? Buffer_from(bytes) : '';
+  for (const marker of ['jumb', 'jumd', 'c2pa', 'caBX', 'C2PA', 'c2ma', 'urn:uuid', 'dcterms:provenance']) {
+    diagnosis.rawMarkers[marker] = haystack.includes(marker);
+  }
+
+  const anyC2paBytes = ['jumb', 'jumd', 'c2ma'].some((m) => diagnosis.rawMarkers[m]);
+
+  if (report.status === STATUS.CREDENTIALS_DETECTED) {
+    diagnosis.interpretation = 'Credentials found and parsed. Nothing to investigate.';
+  } else if (anyC2paBytes) {
+    diagnosis.interpretation =
+      'PARSER PROBLEM: the file contains C2PA byte markers but no manifest was parsed. ' +
+      'The credential engine is failing on this file. Please report this diagnosis.';
+  } else if (report.status === STATUS.UNSUPPORTED_FORMAT) {
+    diagnosis.interpretation = `This file is ${report.formatLabel}, which this version does not read.`;
+  } else if (report.status === STATUS.UNREADABLE) {
+    diagnosis.interpretation = `The container could not be read: ${report.structureError}`;
+  } else {
+    diagnosis.interpretation =
+      'The file we fetched contains no C2PA bytes at all. Either the original has none, ' +
+      'or we fetched a resized or re-encoded copy that lost them. Compare the byte length ' +
+      'and dimensions above against the image you can download from the site itself.';
+  }
+
+  return diagnosis;
+}
+
+/** Decode bytes to a searchable Latin-1 string without a Buffer dependency. */
+function Buffer_from(bytes) {
+  let text = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    text += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return text;
+}

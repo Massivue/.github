@@ -31,18 +31,30 @@ export const PLATFORM_PAGES = {
 
   gemini: {
     host: 'gemini.google.com',
+    /*
+     * This page reproduces the reported Gemini failure exactly.
+     *
+     * The <img> points at Google's resizing CDN with a size options string,
+     * which is what the real page does. The mock server answers that address
+     * with a STRIPPED derivative carrying no credentials, and answers the
+     * `=s0` original address with the signed file. So this page only reports
+     * credentials if the adapter actually asks for the original.
+     */
+    imageHost: 'lh3.googleusercontent.com',
     body: `
       <header>
         <!-- A Google account picture: same domain shape as generated images,
              which is exactly the case the adapter has to tell apart. -->
-        <img id="avatar" src="/a/ACg8ocK-profile" width="32" height="32" alt="Account">
+        <img id="avatar" src="https://lh3.googleusercontent.com/a/ACg8ocK-profile" width="32" height="32" alt="Account">
       </header>
       <main>
         <user-query><p>Draw me a picture.</p></user-query>
         <model-response>
           <message-content>
             <p>Here is your image.</p>
-            <img id="generated" class="generated" src="/img?id=file-signed" alt="A generated picture">
+            <img id="generated" class="generated"
+                 src="https://lh3.googleusercontent.com/gg/MOCKID=w526-h296-rw"
+                 alt="A generated picture">
           </message-content>
         </model-response>
       </main>`,

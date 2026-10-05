@@ -57,6 +57,8 @@ const signed = buildPng({
   xmp: 'provenance',
 });
 const unsigned = buildPng({ width: 1024, height: 768 });
+/* What a resizing CDN returns: same picture, smaller, credentials gone. */
+const strippedDerivative = buildPng({ width: 526, height: 296 });
 const avatar = buildPng({ width: 32, height: 32 });
 
 /** One HTTPS server answering for every platform host. */
@@ -70,6 +72,27 @@ function startServer() {
       const host = (request.headers.host || '').split(':')[0];
       const url = new URL(request.url, `https://${host}`);
       const platform = Object.keys(PLATFORM_PAGES).find((id) => PLATFORM_PAGES[id].host === host);
+
+      /*
+       * Google's resizing CDN, reproduced.
+       *
+       * `=s0` means "give me the original" and returns the signed file.
+       * Any other options string is a derivative the CDN re-encoded, so it
+       * carries no credentials. This is the behaviour that made real Gemini
+       * images report "no supported credentials found".
+       */
+      if (host === 'lh3.googleusercontent.com') {
+        if (url.pathname.startsWith('/a/')) {
+          response.writeHead(200, { 'content-type': 'image/png' });
+          response.end(Buffer.from(avatar));
+          return;
+        }
+        const wantsOriginal = url.pathname.endsWith('=s0');
+        const bytes = wantsOriginal ? signed : strippedDerivative;
+        response.writeHead(200, { 'content-type': 'image/png', 'content-length': bytes.length });
+        response.end(Buffer.from(bytes));
+        return;
+      }
 
       if (url.pathname === '/img') {
         const id = url.searchParams.get('id');
@@ -134,6 +157,15 @@ async function testPlatform(context, adapter) {
     check(`${adapter.id}: the panel shows no technical credential detail`,
       !/\bC2PA\b|manifest|c2pa\.|provenance/i.test(panelText), panelText.slice(0, 160));
 
+    if (adapter.id === 'gemini') {
+      // The whole point: the page shows a stripped derivative. Finding
+      // credentials proves the adapter fetched the original instead.
+      check('gemini: finds credentials DESPITE the page showing a stripped derivative',
+        /Content Credentials found/i.test(panelText), panelText.slice(0, 160));
+      check('gemini: reports the ORIGINAL dimensions, not the derivative\'s',
+        /1024\s*[x\u00d7]\s*768/.test(panelText) && !/526/.test(panelText), panelText.slice(0, 160));
+    }
+
     if (expectCredentials) {
       check(`${adapter.id}: credentials are detected`, /Content Credentials found/i.test(panelText));
 
@@ -189,7 +221,10 @@ async function main() {
   const downloadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crediclean-dl-'));
 
   // Point every supported host at the local mock server.
-  const hostRules = Object.values(PLATFORM_PAGES).map((p) => `MAP ${p.host} 127.0.0.1`).join(',');
+  const hostRules = [
+    ...Object.values(PLATFORM_PAGES).map((p) => `MAP ${p.host} 127.0.0.1`),
+    ...Object.values(PLATFORM_PAGES).filter((p) => p.imageHost).map((p) => `MAP ${p.imageHost} 127.0.0.1`),
+  ].join(',');
 
   let context;
   try {

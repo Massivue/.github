@@ -84,17 +84,20 @@ export const grokAdapter = defineAdapter({
    * failure mode is mild.
    *
    * @param {string} url
-   * @returns {string}
+   * @returns {string[]} addresses to try, most preferred first
    */
-  resolveSourceUrl(url) {
+  sourceUrlCandidates(url) {
+    const candidates = [];
     try {
       const parsed = new URL(url);
-      if (!parsed.hostname.endsWith('pbs.twimg.com')) return url;
-      if (!parsed.searchParams.has('name')) return url;
-      parsed.searchParams.set('name', 'orig');
-      return parsed.href;
+      if (parsed.hostname.endsWith('pbs.twimg.com') && parsed.searchParams.has('name')) {
+        parsed.searchParams.set('name', 'orig');
+        candidates.push(parsed.href);
+      }
     } catch {
-      return url;
+      /* fall through to the page's own address */
     }
+    if (!candidates.includes(url)) candidates.push(url);
+    return candidates;
   },
 });

@@ -121,24 +121,79 @@ test('a very long source filename is capped so it cannot break the panel', () =>
   assert.ok(name.endsWith('.png'));
 });
 
-/* Full-size resolution: the displayed image is often a resized variant. */
+/* ------------------------------------------------------------------ */
+/* Fetching the ORIGINAL, not a resized derivative                     */
+/* ------------------------------------------------------------------ */
 
-test('Grok upgrades an X media address to the full-size original', async () => {
-  const { grokAdapter } = await import('../src/platforms/grok.js');
-  assert.equal(
-    grokAdapter.resolveSourceUrl('https://pbs.twimg.com/media/ABC.jpg?format=jpg&name=small'),
-    'https://pbs.twimg.com/media/ABC.jpg?format=jpg&name=orig',
+/*
+ * These matter more than they look. A resizing CDN re-encodes the image, and
+ * a re-encoded copy carries none of the original's credentials. Inspecting one
+ * reports "no credentials found" however correct the engine is, which is
+ * exactly the Gemini symptom these candidates exist to fix.
+ */
+
+test('Gemini asks the Google CDN for the original before the displayed size', async () => {
+  const { geminiAdapter } = await import('../src/platforms/gemini.js');
+  const candidates = geminiAdapter.sourceUrlCandidates(
+    'https://lh3.googleusercontent.com/gg/AbCdEf123=w526-h296-rw',
   );
+  assert.equal(candidates[0], 'https://lh3.googleusercontent.com/gg/AbCdEf123=s0',
+    'the original must be tried first');
+  assert.equal(candidates[1], 'https://lh3.googleusercontent.com/gg/AbCdEf123=w526-h296-rw',
+    'the page address must remain as a fallback');
+});
+
+test('Gemini handles every shape of Google image address', async () => {
+  const { geminiAdapter } = await import('../src/platforms/gemini.js');
+  const expectFirst = (input, first) => {
+    assert.equal(geminiAdapter.sourceUrlCandidates(input)[0], first, `for ${input}`);
+  };
+  expectFirst('https://lh3.googleusercontent.com/gg/A=s512', 'https://lh3.googleusercontent.com/gg/A=s0');
+  expectFirst('https://lh3.googleusercontent.com/gg/A', 'https://lh3.googleusercontent.com/gg/A=s0');
+  expectFirst('https://lh3.googleusercontent.com/gg/A=w800-h600?authuser=0',
+    'https://lh3.googleusercontent.com/gg/A=s0?authuser=0');
+});
+
+test('Gemini leaves non-CDN addresses untouched', async () => {
+  const { geminiAdapter } = await import('../src/platforms/gemini.js');
+  const url = 'https://gemini.google.com/some/path.png';
+  assert.deepEqual(geminiAdapter.sourceUrlCandidates(url), [url]);
+});
+
+test('Gemini never drops the page address, so a wrong guess cannot break retrieval', async () => {
+  const { geminiAdapter } = await import('../src/platforms/gemini.js');
+  for (const url of [
+    'https://lh3.googleusercontent.com/gg/A=w1-h1',
+    'https://lh5.googleusercontent.com/weird=',
+    'https://usercontent.google.com/x=s100',
+    'not a url at all',
+  ]) {
+    assert.ok(geminiAdapter.sourceUrlCandidates(url).includes(url), `fallback missing for ${url}`);
+  }
+});
+
+test('Grok asks X for the full-size original first', async () => {
+  const { grokAdapter } = await import('../src/platforms/grok.js');
+  const candidates = grokAdapter.sourceUrlCandidates(
+    'https://pbs.twimg.com/media/ABC.jpg?format=jpg&name=small',
+  );
+  assert.equal(candidates[0], 'https://pbs.twimg.com/media/ABC.jpg?format=jpg&name=orig');
+  assert.ok(candidates.includes('https://pbs.twimg.com/media/ABC.jpg?format=jpg&name=small'));
 });
 
 test('Grok leaves addresses without a size parameter alone', async () => {
   const { grokAdapter } = await import('../src/platforms/grok.js');
-  const url = 'https://assets.grok.com/users/x/generated/abc.jpg';
-  assert.equal(grokAdapter.resolveSourceUrl(url), url);
-  assert.equal(grokAdapter.resolveSourceUrl('https://pbs.twimg.com/media/ABC.jpg'), 'https://pbs.twimg.com/media/ABC.jpg');
+  for (const url of [
+    'https://assets.grok.com/users/x/generated/abc.jpg',
+    'https://pbs.twimg.com/media/ABC.jpg',
+    'not a url',
+  ]) {
+    assert.deepEqual(grokAdapter.sourceUrlCandidates(url), [url]);
+  }
 });
 
-test('Grok survives a malformed address without throwing', async () => {
-  const { grokAdapter } = await import('../src/platforms/grok.js');
-  assert.equal(grokAdapter.resolveSourceUrl('not a url'), 'not a url');
+test('ChatGPT supplies no candidates hook, so its behaviour is unchanged', async () => {
+  const { chatgptAdapter } = await import('../src/platforms/chatgpt.js');
+  assert.equal(typeof chatgptAdapter.sourceUrlCandidates, 'undefined',
+    'adding one here would change the one platform that is confirmed working');
 });

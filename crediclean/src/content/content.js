@@ -76,8 +76,11 @@
   async function handleInspect(entry, badgeUi) {
     badgeUi.setBusy(true, 'Reading\u2026');
 
-    const url = imageLoader.bestSourceUrl(entry.img, adapter);
-    const loaded = await imageLoader.loadImageBytes(url);
+    // Some sites show a resized derivative of the real file. Ask the adapter
+    // for better addresses first; the page's own address stays as a fallback.
+    const candidates = imageLoader.sourceUrlCandidates(entry.img, adapter);
+    const loaded = await imageLoader.loadFirstAvailable(candidates);
+    const url = loaded.url || candidates[0];
 
     // The user may have scrolled the image away or switched conversation while
     // we were fetching. Do not draw a panel onto an image that has gone.
@@ -103,6 +106,35 @@
     }
 
     badgeUi.setBusy(false);
+
+    /*
+     * When nothing is found, say why in the console.
+     *
+     * "No supported credentials found" has three very different causes that
+     * look identical from outside: the file really has none, we fetched a
+     * re-encoded copy that lost them, or our parser missed them. The
+     * diagnosis separates those, and is the single thing worth pasting into a
+     * bug report. It goes to the console only, never into the panel.
+     */
+    if (report.status === inspectorModule.STATUS.NO_CREDENTIALS_DETECTED) {
+      try {
+        const diagnosis = inspectorModule.diagnoseImage(loaded.bytes);
+        console.groupCollapsed(
+          `[CrediClean] No credentials found on ${adapter.name}. Click to see why.`,
+        );
+        console.log('Interpretation:', diagnosis.interpretation);
+        console.log('Fetched from  :', url);
+        console.log('Addresses tried:', candidates);
+        console.log('Format / size :', diagnosis.format, diagnosis.byteLength, 'bytes',
+          diagnosis.dimensions ? `${diagnosis.dimensions.width}x${diagnosis.dimensions.height}` : '');
+        console.log('Container     :', diagnosis.containerBlocks.join('  '));
+        console.log('C2PA byte markers:', diagnosis.rawMarkers);
+        console.log('Full diagnosis:', diagnosis);
+        console.groupEnd();
+      } catch (error) {
+        console.warn('[CrediClean] Diagnosis failed.', error);
+      }
+    }
 
     const altText = entry.img.getAttribute('alt') || '';
     const filename = downloadManager.sourceFilename({ url, format: report.format, altText });

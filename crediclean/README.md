@@ -14,7 +14,7 @@ Version 0.2.0. Free, open source, no account, no server.
 | Platform | Status |
 |---|---|
 | **ChatGPT** | **Working**, confirmed on the live site |
-| **Gemini** | Built and tested against a reconstruction, **not yet confirmed live** |
+| **Gemini** | Detection **confirmed live**. Retrieval fixed to fetch the original rather than a resized copy; the fix itself is not yet confirmed live |
 | **Copilot** | Built and tested against a reconstruction, **not yet confirmed live** |
 | **Grok** | Detection built. Whether Grok images carry credentials at all is **unknown**, so the extension reports what it finds and invents nothing |
 
@@ -79,7 +79,7 @@ from. That is the point of the tool, and it is worth being deliberate about.
 |---|---|---|
 | PNG | `caBX` chunk | Verified against real signed files |
 | JPEG | `APP11` segments, including manifests split across several | Verified against real signed files |
-| WebP | `C2PA` chunk | Implemented from the specification, **not verified against a real signed file** |
+| WebP | `C2PA` chunk | Chunk identifier **confirmed against the C2PA reference implementation**; still not tested on a real signed WebP |
 
 GIF, AVIF, HEIC, TIFF and SVG are recognised and refused. They are never
 reported as having no credentials, because they were not inspected.
