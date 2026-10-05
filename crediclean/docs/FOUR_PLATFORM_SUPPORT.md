@@ -123,8 +123,46 @@ Anything recovered this way is checked against the image on screen, same aspect
 ratio within 2 percent and at least as many pixels, before it is used. Handing
 back somebody else's picture would be far worse than failing.
 
-**The remaining unknown, and it is a real one:** whether the file Gemini
-downloads carries C2PA at all. If Google's servers hand the browser an
+### What observing the downloads revealed
+
+The observer worked. On a live Gemini image it recovered four real
+`lh3.googleusercontent.com/rd-gg/...` addresses and fetched one instead of the
+blob.
+
+The result was the decisive finding of this whole investigation:
+
+```
+From the blob         : jpeg 167736 bytes 1024x559
+                        FFE0:14 FFDB:130 FFC0:15 FFC4:28 FFC4:100 FFC4:25 FFC4:63
+From Google's server  : jpeg 167736 bytes 1024x559
+                        FFE0:14 FFDB:130 FFC0:15 FFC4:28 FFC4:100 FFC4:25 FFC4:63
+```
+
+**Identical byte length, identical dimensions, identical container.** So the
+page is not re-encoding anything, which disproves the canvas theory as well. It
+downloads this file and shows it directly.
+
+**Google's own server is serving a JPEG with no Content Credentials in it.**
+The credentials are removed before anything reaches the browser.
+
+That changes what is left to try. Two possibilities remain:
+
+1. A different address serves the credentialed original. The adapter now also
+   tries the `=s0` and `=d` forms of every observed address, and prefers
+   whichever candidate actually turns out to carry credentials rather than
+   trusting the order.
+2. Gemini's own download button fetches from a different endpoint. Because the
+   observer records what the page downloads, clicking that button before
+   inspecting makes its address available too.
+
+**If neither works, this is not fixable from a browser extension.** If Google
+never serves a file with credentials to the browser, then no extension running
+in the browser can find any, and "no supported credentials found" is the
+correct and honest answer.
+
+### The remaining unknown
+
+Whether the file Gemini downloads carries C2PA at all. If Google's servers hand the browser an
 already-stripped image, then nothing reaches the browser that has credentials
 in it, no extension can recover them, and "no supported credentials found" is
 simply the correct answer. The way to settle this is to download an image using

@@ -139,7 +139,9 @@ test('Gemini asks the Google CDN for the original before the displayed size', as
   );
   assert.equal(candidates[0], 'https://lh3.googleusercontent.com/gg/AbCdEf123=s0',
     'the original must be tried first');
-  assert.equal(candidates[1], 'https://lh3.googleusercontent.com/gg/AbCdEf123=w526-h296-rw',
+  assert.equal(candidates[1], 'https://lh3.googleusercontent.com/gg/AbCdEf123=d',
+    'the explicit download form is tried too');
+  assert.ok(candidates.includes('https://lh3.googleusercontent.com/gg/AbCdEf123=w526-h296-rw'),
     'the page address must remain as a fallback');
 });
 

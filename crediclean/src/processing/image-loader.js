@@ -233,12 +233,44 @@ export async function loadFirstAvailable(urls, options = {}) {
     return { ok: false, code: ERROR_CODE.BAD_URL, error: 'This image has no readable address.' };
   }
 
-  const { accept } = options;
+  const { accept, prefer } = options;
   let lastFailure = null;
   let rejected = 0;
 
+  /*
+   * Two passes when the caller expresses a preference.
+   *
+   * The first pass looks only for a candidate the caller actively wants, such
+   * as one that carries credentials. Only if none exists does the second pass
+   * settle for the first merely acceptable one. Ordering alone is a weak
+   * signal when several addresses serve near-identical pictures; what the
+   * bytes contain is a much stronger one.
+   */
+  const fetched = new Map();
+
+  if (typeof prefer === 'function') {
+    for (let index = 0; index < urls.length; index += 1) {
+      const result = await loadImageBytes(urls[index]);
+      fetched.set(index, result);
+      if (!result.ok) continue;
+      try {
+        if (prefer(result.bytes, urls[index])) {
+          return {
+            ...result,
+            url: urls[index],
+            candidateIndex: index,
+            candidatesTried: index + 1,
+            matchedPreference: true,
+          };
+        }
+      } catch {
+        /* a failing preference must not stop the search */
+      }
+    }
+  }
+
   for (let index = 0; index < urls.length; index += 1) {
-    const result = await loadImageBytes(urls[index]);
+    const result = fetched.has(index) ? fetched.get(index) : await loadImageBytes(urls[index]);
     if (!result.ok) {
       lastFailure = result;
       continue;

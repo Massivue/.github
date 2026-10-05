@@ -92,9 +92,26 @@
       const observed = await observedSources.observedImageUrls();
       if (observed.length > 0) {
         // Newest first: the image just asked about is the likeliest match.
-        const extra = [...observed].reverse().filter((url) => !candidates.includes(url));
+        // Each observed address is also put through the adapter's rewrites, so
+        // the original-size forms are tried as well as the address itself.
+        const extra = [];
+        for (const observedUrl of [...observed].reverse()) {
+          const forms =
+            typeof adapter.sourceUrlCandidates === 'function'
+              ? adapter.sourceUrlCandidates(observedUrl)
+              : [observedUrl];
+          for (const form of forms) {
+            if (!extra.includes(form) && !candidates.includes(form)) extra.push(form);
+          }
+        }
         candidates = [...extra, ...candidates];
       }
+
+    // Fetching is cheap but not free, so cap how many addresses we will try.
+    if (candidates.length > 12) {
+      const blob = candidates[candidates.length - 1];
+      candidates = [...candidates.slice(0, 11), blob];
+    }
     }
 
     /*
@@ -122,7 +139,27 @@
       }
     };
 
-    const loaded = await imageLoader.loadFirstAvailable(candidates, { accept });
+    /*
+     * Among the addresses that plausibly show the same picture, strongly
+     * prefer one that actually carries credentials. That is almost certainly
+     * the real original, and it is a far better signal than ordering alone.
+     */
+    const prefer = (bytes) => {
+      try {
+        const candidate = inspectorModule.inspectImage(bytes);
+        if (candidate.status !== inspectorModule.STATUS.CREDENTIALS_DETECTED) return false;
+        if (!displayed.width || !displayed.height || !candidate.dimensions) return true;
+        const shownRatio = displayed.width / displayed.height;
+        const candidateRatio = candidate.dimensions.width / candidate.dimensions.height;
+        // Wider tolerance here: an uncropped original may be a little
+        // differently shaped than the version shown in the conversation.
+        return Math.abs(shownRatio - candidateRatio) / shownRatio < 0.12;
+      } catch {
+        return false;
+      }
+    };
+
+    const loaded = await imageLoader.loadFirstAvailable(candidates, { accept, prefer });
     const url = loaded.url || candidates[0];
 
     // The user may have scrolled the image away or switched conversation while

@@ -88,9 +88,20 @@ export const geminiAdapter = defineAdapter({
         const options = marker === -1 ? null : path.slice(marker + 1);
         const looksLikeOptions = options !== null && /^[a-z0-9]+(-[a-z0-9]+)*$/i.test(options);
 
-        const original = new URL(parsed.href);
-        original.pathname = looksLikeOptions ? `${path.slice(0, marker)}=s0` : `${path}=s0`;
-        candidates.push(original.href);
+        const base = looksLikeOptions ? path.slice(0, marker) : path;
+
+        /*
+         * Two ways to ask Google's CDN for the real file:
+         *   =s0  original resolution, original format
+         *   =d   download the original
+         * Both are conventions rather than documented API, so both are tried
+         * and the page's own address is still kept as the fallback.
+         */
+        for (const suffix of ['=s0', '=d']) {
+          const original = new URL(parsed.href);
+          original.pathname = `${base}${suffix}`;
+          candidates.push(original.href);
+        }
       }
     } catch {
       /* fall through to the page's own address */
