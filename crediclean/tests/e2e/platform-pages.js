@@ -32,19 +32,21 @@ export const PLATFORM_PAGES = {
   gemini: {
     host: 'gemini.google.com',
     /*
-     * This page reproduces the reported Gemini failure exactly.
+     * This page reproduces the REAL Gemini failure, as diagnosed from a live
+     * image on 5 October 2026.
      *
-     * The <img> points at Google's resizing CDN with a size options string,
-     * which is what the real page does. The mock server answers that address
-     * with a STRIPPED derivative carrying no credentials, and answers the
-     * `=s0` original address with the signed file. So this page only reports
-     * credentials if the adapter actually asks for the original.
+     * The <img> is backed by a blob the page builds itself, containing a
+     * re-encoded JPEG with every scrap of metadata gone. That is what the real
+     * Gemini page does, and it is why the credentials were never found: they
+     * were destroyed inside the page before the extension saw anything.
+     *
+     * The only route to the real file is a download link in the markup. There
+     * is also a decoy link to a differently shaped image, which the extension
+     * must reject rather than process by mistake.
      */
     imageHost: 'lh3.googleusercontent.com',
     body: `
       <header>
-        <!-- A Google account picture: same domain shape as generated images,
-             which is exactly the case the adapter has to tell apart. -->
         <img id="avatar" src="https://lh3.googleusercontent.com/a/ACg8ocK-profile" width="32" height="32" alt="Account">
       </header>
       <main>
@@ -52,12 +54,23 @@ export const PLATFORM_PAGES = {
         <model-response>
           <message-content>
             <p>Here is your image.</p>
-            <img id="generated" class="generated"
-                 src="https://lh3.googleusercontent.com/gg/MOCKID=w526-h296-rw"
-                 alt="A generated picture">
+            <!-- src is set to a blob at runtime, exactly as Gemini does. -->
+            <img id="generated" class="generated" alt="A generated picture">
+            <a id="decoy" href="https://lh3.googleusercontent.com/gg/DECOYID=w300-h900">Some other image</a>
+            <a id="download" href="https://lh3.googleusercontent.com/gg/REALID=w526-h296-rw" download>Download</a>
           </message-content>
         </model-response>
-      </main>`,
+      </main>
+      <script>
+        // Build the displayed image the way the real page does: fetch a
+        // re-encoded copy and show it from a blob, so no address on the <img>
+        // ever points at the original.
+        fetch('https://lh3.googleusercontent.com/stripped')
+          .then((response) => response.blob())
+          .then((blob) => {
+            document.getElementById('generated').src = URL.createObjectURL(blob);
+          });
+      </script>`,
   },
 
   copilot: {

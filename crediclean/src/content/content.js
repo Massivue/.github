@@ -79,7 +79,33 @@
     // Some sites show a resized derivative of the real file. Ask the adapter
     // for better addresses first; the page's own address stays as a fallback.
     const candidates = imageLoader.sourceUrlCandidates(entry.img, adapter);
-    const loaded = await imageLoader.loadFirstAvailable(candidates);
+
+    /*
+     * Guard against processing the wrong picture.
+     *
+     * Some candidates come from addresses found in the page's markup, which
+     * could belong to a different image. Accept one only if what comes back
+     * has the same shape as the image on screen: the same aspect ratio, and at
+     * least as many pixels. The address from the <img> itself is always
+     * accepted, so this can only ever narrow a wrong choice, never fail open.
+     */
+    const displayed = { width: entry.img.naturalWidth || 0, height: entry.img.naturalHeight || 0 };
+    const accept = (bytes) => {
+      if (!displayed.width || !displayed.height) return true;
+      try {
+        const candidate = inspectorModule.inspectImage(bytes);
+        if (!candidate.dimensions) return false;
+        const shownRatio = displayed.width / displayed.height;
+        const candidateRatio = candidate.dimensions.width / candidate.dimensions.height;
+        const sameShape = Math.abs(shownRatio - candidateRatio) / shownRatio < 0.02;
+        const bigEnough = candidate.dimensions.width >= displayed.width * 0.95;
+        return sameShape && bigEnough;
+      } catch {
+        return false;
+      }
+    };
+
+    const loaded = await imageLoader.loadFirstAvailable(candidates, { accept });
     const url = loaded.url || candidates[0];
 
     // The user may have scrolled the image away or switched conversation while
@@ -125,6 +151,16 @@
         console.log('Interpretation:', diagnosis.interpretation);
         console.log('Fetched from  :', url);
         console.log('Addresses tried:', candidates);
+        if (String(url).startsWith('blob:')) {
+          console.warn(
+            'This came from a blob: address, which means the page built these bytes ' +
+              'itself rather than serving a file. If the container above shows only ' +
+              'JFIF, quantisation, frame and Huffman segments, the page re-encoded the ' +
+              'picture and destroyed its metadata before CrediClean could see it. ' +
+              'The original must be found elsewhere in the page. Run the snippet in ' +
+              'docs/TROUBLESHOOTING.md and send the output.',
+          );
+        }
         console.log('Format / size :', diagnosis.format, diagnosis.byteLength, 'bytes',
           diagnosis.dimensions ? `${diagnosis.dimensions.width}x${diagnosis.dimensions.height}` : '');
         console.log('Container     :', diagnosis.containerBlocks.join('  '));

@@ -74,14 +74,44 @@ export function bestSourceUrl(img) {
 export function sourceUrlCandidates(img, adapter = null) {
   const pageUrl = bestSourceUrl(img);
   if (!pageUrl) return [];
-  if (!adapter || typeof adapter.sourceUrlCandidates !== 'function') return [pageUrl];
-  try {
-    const candidates = adapter.sourceUrlCandidates(pageUrl);
-    if (!Array.isArray(candidates) || candidates.length === 0) return [pageUrl];
-    return candidates.includes(pageUrl) ? candidates : [...candidates, pageUrl];
-  } catch {
-    return [pageUrl];
+
+  const fromUrl = [];
+  if (adapter && typeof adapter.sourceUrlCandidates === 'function') {
+    try {
+      const rewritten = adapter.sourceUrlCandidates(pageUrl);
+      if (Array.isArray(rewritten)) fromUrl.push(...rewritten);
+    } catch {
+      /* fall through */
+    }
   }
+  if (fromUrl.length === 0) fromUrl.push(pageUrl);
+
+  const fromDom = [];
+  if (adapter && typeof adapter.domSourceCandidates === 'function') {
+    try {
+      const found = adapter.domSourceCandidates(img);
+      if (Array.isArray(found)) fromDom.push(...found);
+    } catch {
+      /* fall through */
+    }
+  }
+
+  /*
+   * A blob: address is bytes the page built in memory. Where a page re-encodes
+   * an image for display, those bytes carry none of the original's metadata,
+   * so an address found in the markup is far more likely to be the real file.
+   * Try those first in that case, and the blob last so it remains the
+   * fallback.
+   */
+  const blobFirst = !pageUrl.startsWith('blob:');
+  const ordered = blobFirst ? [...fromUrl, ...fromDom] : [...fromDom, ...fromUrl];
+
+  const unique = [];
+  for (const url of ordered) {
+    if (url && !unique.includes(url)) unique.push(url);
+  }
+  if (!unique.includes(pageUrl)) unique.push(pageUrl);
+  return unique;
 }
 
 /**
@@ -198,17 +228,43 @@ function checkSize(bytes) {
  * @returns {Promise<object>} the successful result, annotated with which
  *   address worked and how many were tried, or the last failure
  */
-export async function loadFirstAvailable(urls) {
+export async function loadFirstAvailable(urls, options = {}) {
   if (!urls || urls.length === 0) {
     return { ok: false, code: ERROR_CODE.BAD_URL, error: 'This image has no readable address.' };
   }
+
+  const { accept } = options;
   let lastFailure = null;
+  let rejected = 0;
+
   for (let index = 0; index < urls.length; index += 1) {
     const result = await loadImageBytes(urls[index]);
-    if (result.ok) {
-      return { ...result, url: urls[index], candidateIndex: index, candidatesTried: index + 1 };
+    if (!result.ok) {
+      lastFailure = result;
+      continue;
     }
-    lastFailure = result;
+
+    /*
+     * An address found in the page's markup might belong to a different
+     * image. Handing the user somebody else's picture, or silently processing
+     * the wrong one, would be far worse than failing. So the caller gets to
+     * check that what came back really is this image. The last candidate is
+     * always accepted, because it is the address from the <img> itself.
+     */
+    const isLast = index === urls.length - 1;
+    if (!isLast && typeof accept === 'function' && !accept(result.bytes, urls[index])) {
+      rejected += 1;
+      continue;
+    }
+
+    return {
+      ...result,
+      url: urls[index],
+      candidateIndex: index,
+      candidatesTried: index + 1,
+      candidatesRejected: rejected,
+    };
   }
-  return { ...lastFailure, candidatesTried: urls.length };
+
+  return { ...lastFailure, candidatesTried: urls.length, candidatesRejected: rejected };
 }

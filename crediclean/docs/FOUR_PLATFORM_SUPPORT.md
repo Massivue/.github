@@ -73,6 +73,40 @@ else known.
 | Processing | Engine is shared with ChatGPT, so it will work on any C2PA file — **not confirmed** for Gemini files specifically |
 | Local only | Yes, by construction |
 
+### The real cause: the page re-encodes the image before we see it
+
+A live Gemini image was diagnosed on 5 October 2026. The result was decisive
+and different from the first theory.
+
+The `<img>` pointed at `blob:https://gemini.google.com/...`, and the bytes
+behind that blob were a JPEG containing **only** a JFIF header, one
+quantisation segment, a frame header and four Huffman tables:
+
+```
+FFE0:14  FFDB:130  FFC0:15  FFC4:28  FFC4:100  FFC4:25  FFC4:63
+```
+
+No `FFE1` (EXIF or XMP) and no `FFEB` (APP11, where C2PA lives). That is the
+signature of an image a browser has just re-encoded. The single 130-byte
+quantisation segment is characteristic of a canvas encode; a file from a tool
+like ImageMagick splits it into two.
+
+**So the Gemini page builds a fresh copy of the picture and displays that.** By
+the time CrediClean sees anything, the credentials have already been destroyed
+inside the page. This cannot be fixed by changing the address, because there is
+no address: the bytes were manufactured in memory.
+
+**Fix:** the adapter now looks for the original file elsewhere in the markup,
+preferring a download link, and only falls back to the blob. Anything it finds
+is checked against the image on screen (same aspect ratio, at least as many
+pixels) before being used, so a wrong address cannot cause the wrong picture to
+be processed.
+
+**Unverified:** this heuristic has not been tested against Gemini's real
+markup. If the original is not reachable from the page at all, no extension can
+retrieve it and the honest answer stays "no supported credentials found".
+`docs/TROUBLESHOOTING.md` has a snippet that settles it.
+
 ### The resized-derivative problem, and the fix
 
 On 5 October 2026 a real Gemini image reported "No supported credentials

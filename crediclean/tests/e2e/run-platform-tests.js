@@ -59,6 +59,10 @@ const signed = buildPng({
 const unsigned = buildPng({ width: 1024, height: 768 });
 /* What a resizing CDN returns: same picture, smaller, credentials gone. */
 const strippedDerivative = buildPng({ width: 526, height: 296 });
+/* What the page shows: same size as the original, but re-encoded and bare. */
+const strippedDisplay = buildPng({ width: 1024, height: 768 });
+/* A different image entirely, to prove a wrong candidate is refused. */
+const decoy = buildPng({ width: 300, height: 900, c2pa: buildC2paManifestStore() });
 const avatar = buildPng({ width: 32, height: 32 });
 
 /** One HTTPS server answering for every platform host. */
@@ -69,6 +73,9 @@ function startServer() {
       cert: fs.readFileSync(path.join(HERE, 'cert.pem')),
     },
     (request, response) => {
+      // The mock page fetches its own image cross-origin to build a blob, just
+      // as a real app would from its own CDN. Allow that here.
+      response.setHeader('access-control-allow-origin', '*');
       const host = (request.headers.host || '').split(':')[0];
       const url = new URL(request.url, `https://${host}`);
       const platform = Object.keys(PLATFORM_PAGES).find((id) => PLATFORM_PAGES[id].host === host);
@@ -87,6 +94,19 @@ function startServer() {
           response.end(Buffer.from(avatar));
           return;
         }
+        // What the page shows: a re-encoded copy with no credentials left.
+        if (url.pathname === '/stripped') {
+          response.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': strippedDisplay.length });
+          response.end(Buffer.from(strippedDisplay));
+          return;
+        }
+        // A differently shaped image the extension must refuse to process.
+        if (url.pathname.startsWith('/gg/DECOYID')) {
+          response.writeHead(200, { 'content-type': 'image/png', 'content-length': decoy.length });
+          response.end(Buffer.from(decoy));
+          return;
+        }
+        // The real file, available only at the original-size address.
         const wantsOriginal = url.pathname.endsWith('=s0');
         const bytes = wantsOriginal ? signed : strippedDerivative;
         response.writeHead(200, { 'content-type': 'image/png', 'content-length': bytes.length });
@@ -158,12 +178,21 @@ async function testPlatform(context, adapter) {
       !/\bC2PA\b|manifest|c2pa\.|provenance/i.test(panelText), panelText.slice(0, 160));
 
     if (adapter.id === 'gemini') {
-      // The whole point: the page shows a stripped derivative. Finding
-      // credentials proves the adapter fetched the original instead.
-      check('gemini: finds credentials DESPITE the page showing a stripped derivative',
+      /*
+       * The point of this whole platform. The page shows a blob it built
+       * itself, holding a re-encoded copy with no credentials. Finding
+       * credentials at all proves the extension located the real file through
+       * the markup instead of giving up on the blob.
+       */
+      const blobShown = await page.evaluate(
+        () => (document.getElementById('generated').src || '').startsWith('blob:'),
+      );
+      check('gemini: the page really is showing a blob, as the live site does', blobShown === true);
+
+      check('gemini: finds credentials DESPITE the page showing a re-encoded blob',
         /Content Credentials found/i.test(panelText), panelText.slice(0, 160));
-      check('gemini: reports the ORIGINAL dimensions, not the derivative\'s',
-        /1024\s*[x\u00d7]\s*768/.test(panelText) && !/526/.test(panelText), panelText.slice(0, 160));
+      check('gemini: reports the ORIGINAL dimensions, not the decoy\'s or the derivative\'s',
+        /1024\s*[x\u00d7]\s*768/.test(panelText) && !/300|526/.test(panelText), panelText.slice(0, 160));
     }
 
     if (expectCredentials) {

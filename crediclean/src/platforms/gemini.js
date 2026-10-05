@@ -101,6 +101,82 @@ export const geminiAdapter = defineAdapter({
     return candidates;
   },
 
+  /**
+   * Find the ORIGINAL image address in the page, when the <img> only has a
+   * blob: address.
+   *
+   * WHY THIS EXISTS. A real Gemini image was diagnosed on 5 October 2026. Its
+   * <img> pointed at `blob:https://gemini.google.com/...`, and the bytes
+   * behind that blob were a JPEG containing only JFIF, one quantisation
+   * segment, a frame header and four Huffman tables. No EXIF, no XMP, no
+   * APP11. That is the exact shape of an image a browser has just re-encoded,
+   * and re-encoding destroys every piece of metadata.
+   *
+   * So the page builds a fresh copy of the picture and shows that. By the time
+   * CrediClean sees it the credentials are already gone, and no amount of
+   * rewriting the address can bring them back, because there is no address:
+   * the bytes were manufactured in the page.
+   *
+   * The only way through is to find where the real file lives. Gemini offers a
+   * download for generated images, so a link to the original is usually
+   * somewhere near the image in the markup. This looks for one.
+   *
+   * HEURISTIC, and unverified against the real Gemini markup. It is written to
+   * fail safely: if it finds nothing, or finds the wrong thing, the loader
+   * falls back to the blob and behaviour is exactly as before.
+   *
+   * @param {HTMLImageElement} img
+   * @returns {string[]} candidate addresses for the original
+   */
+  domSourceCandidates(img) {
+    const found = [];
+    const add = (value) => {
+      if (typeof value !== 'string') return;
+      const url = value.trim();
+      if (!/^https:\/\//.test(url)) return;
+      if (/googleusercontent\.com\/a\//.test(url)) return; // profile pictures
+      if (!found.includes(url)) found.push(url);
+    };
+
+    const looksLikeImageHost = (url) =>
+      /googleusercontent\.com|usercontent\.google\.com/.test(url);
+
+    // Walk a bounded way up from the image, staying inside its own reply so we
+    // cannot pick up a different image from elsewhere in the conversation.
+    let node = img;
+    for (let depth = 0; node && depth < 6; depth += 1) {
+      // 1. A download link is the strongest signal: it points at the real file.
+      for (const anchor of node.querySelectorAll ? node.querySelectorAll('a[href]') : []) {
+        const href = anchor.getAttribute('href');
+        if (anchor.hasAttribute('download') || looksLikeImageHost(href || '')) add(href);
+      }
+
+      // 2. A <picture> may carry the real address in a <source>.
+      for (const source of node.querySelectorAll ? node.querySelectorAll('source[srcset]') : []) {
+        add((source.getAttribute('srcset') || '').split(',')[0].trim().split(/\s+/)[0]);
+      }
+
+      // 3. Any attribute anywhere holding an image-host address.
+      for (const element of node.querySelectorAll ? node.querySelectorAll('*') : []) {
+        for (const attribute of element.attributes || []) {
+          if (looksLikeImageHost(attribute.value || '')) add(attribute.value);
+        }
+      }
+
+      if (found.length > 0) break;
+      node = node.parentElement;
+    }
+
+    // Prefer the original size for anything on Google's resizing CDN.
+    const upgraded = [];
+    for (const url of found) {
+      for (const candidate of this.sourceUrlCandidates(url)) {
+        if (!upgraded.includes(candidate)) upgraded.push(candidate);
+      }
+    }
+    return upgraded;
+  },
+
   support: {
     imageDetection: SUPPORT.UNVERIFIED,
     // Documented by Google, but we have not inspected a real Gemini file.

@@ -181,3 +181,60 @@ The diagnosis names the format. Version 0.2.0 reads PNG, JPEG and WebP.
 The expanded diagnosis, and ideally the image file itself downloaded from the
 site's own download button. Inspecting the real bytes settles the question
 immediately.
+
+## When the image comes from a `blob:` address
+
+If the diagnosis shows `Fetched from : blob:...`, the page built those bytes in
+memory rather than serving a file. Some apps re-encode a picture for display,
+and re-encoding destroys all metadata, so the credentials are gone before
+CrediClean sees anything.
+
+You can tell from the **Container** line. A re-encoded JPEG shows only these:
+
+```
+FFE0 (JFIF)   FFDB (quantisation)   FFC0 (frame)   FFC4 (Huffman) x4
+```
+
+No `FFE1` and no `FFEB` means nothing survived. No change to the address can
+recover it: there is no address, only manufactured bytes.
+
+CrediClean handles this by looking for the original file elsewhere in the page,
+usually behind a download link. If that fails, the markup has changed and we
+need to see it.
+
+### Send us the markup around the image
+
+Open the console on the page with the image and paste this in:
+
+```js
+(() => {
+  const img = [...document.querySelectorAll('img')]
+    .filter((i) => i.naturalWidth > 200).pop();
+  if (!img) return 'No large image found.';
+  const out = { src: img.src.slice(0, 120), size: [img.naturalWidth, img.naturalHeight], links: [], attrs: [] };
+  let node = img;
+  for (let d = 0; node && d < 6; d++) {
+    for (const a of node.querySelectorAll?.('a[href]') ?? []) {
+      out.links.push({ href: a.getAttribute('href').slice(0, 160), download: a.hasAttribute('download') });
+    }
+    for (const el of node.querySelectorAll?.('*') ?? []) {
+      for (const at of el.attributes ?? []) {
+        if (/^https?:\/\//.test(at.value) && at.value.length < 300) {
+          out.attrs.push(`${el.tagName}[${at.name}] = ${at.value.slice(0, 160)}`);
+        }
+      }
+    }
+    if (out.links.length || out.attrs.length) break;
+    node = node.parentElement;
+  }
+  out.links = out.links.slice(0, 10);
+  out.attrs = [...new Set(out.attrs)].slice(0, 10);
+  return JSON.stringify(out, null, 2);
+})()
+```
+
+It prints the image's address and every real web address near it. Send the
+output. If the original file is reachable from the page at all, it will be in
+that list, and pointing the adapter at it is a small change.
+
+Nothing is uploaded anywhere. It only reads the page you are already looking at.
