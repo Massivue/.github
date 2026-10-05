@@ -46,6 +46,8 @@ from. That is the point of the tool, and it is worth being deliberate about.
 - Adds a small, unobtrusive button to each one. Light and dark themes.
 - Shows a compact panel with what you need: whether credentials were found,
   plus the image's format, dimensions and filename. Nothing technical.
+- Positions itself sensibly: below the image when there is room, above it when
+  there is not, and never behind ChatGPT's message box.
 - Removes supported credentials **losslessly** and saves a copy, from a single
   button press. There is no second confirmation.
 - Checks its own work before giving you the file, and discards it if a check fails.
@@ -172,7 +174,7 @@ checks in the panel after every removal.
 npm test                 # 95 unit tests
 npm run fetch-samples    # download real C2PA-signed images
 npm test                 # now includes tests against those real files
-npm run test:e2e         # 58 checks in a real Chromium with the extension loaded
+npm run test:e2e         # 64 checks in a real Chromium with the extension loaded
 npm run verify           # check the manifest matches the code
 ```
 

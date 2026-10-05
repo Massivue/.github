@@ -164,7 +164,7 @@
   position: absolute;
   /* Wide enough that "Remove credentials & save" and the fact rows sit on one
      line each, narrow enough to feel like a popover rather than a dialog. */
-  width: 390px;
+  width: 376px;
   max-width: calc(100vw - 24px);
   /* Height follows the content. The cap is only a safety net for very short
      viewports; the panel is far shorter than this in normal use, so nothing
@@ -173,7 +173,7 @@
   overflow: hidden auto;
   background: var(--cc-surface);
   border: 1px solid var(--cc-border);
-  border-radius: 12px;
+  border-radius: 11px;
   box-shadow: var(--cc-shadow);
   pointer-events: auto;
   overscroll-behavior: contain;
@@ -184,7 +184,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 10px 10px 14px;
+  padding: 7px 8px 7px 12px;
   border-bottom: 1px solid var(--cc-border);
 }
 
@@ -229,10 +229,10 @@
 }
 
 .cc-panel__body {
-  padding: 14px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 /* --------------------------------------------------------------------- */
@@ -244,8 +244,8 @@
 .cc-status {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13.5px;
+  gap: 7px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -273,8 +273,8 @@
 
 .cc-facts {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
-  gap: 6px 14px;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 4px 12px;
   margin: 0;
   align-items: baseline;
 }
@@ -306,12 +306,14 @@
 .cc-actions {
   display: flex;
   gap: 8px;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .cc-button {
   flex: 1 1 auto;
+  /* 9px padding + 13px line + 2px border lands at about 37px tall. */
   padding: 9px 12px;
+  min-height: 37px;
   border: 1px solid var(--cc-border);
   border-radius: 8px;
   background: var(--cc-surface-raised);

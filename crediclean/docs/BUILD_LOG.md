@@ -131,6 +131,46 @@ The browser test grew from 37 checks to 58, and now asserts the absence of the
 technical sections as explicitly as it asserts the presence of the three facts,
 so the panel cannot quietly grow back into an inspector.
 
+## Milestone 6: Final UI polish
+
+**5 October 2026.**
+
+The panel was still taller than it needed to be, and could open behind
+ChatGPT's message composer when the image sat low on screen.
+
+### Compacted
+
+Trimmed padding, gaps and type sizes, and moved the one caveat line out of the
+default view. The panel is now **378 x 208px** where it was 332 x 506px at the
+start of the day. It matches the target layout exactly: a status line, three
+facts, one button.
+
+The caveat about watermarks moved into the success state, where someone is most
+likely to assume their image is now untraceable. It costs nothing in the
+default panel and still appears at the moment it matters.
+
+### Positioned properly
+
+The panel now measures the space available and chooses: below the image when it
+fits, above when it does not, clamped into the viewport either way.
+
+"Below" accounts for anything pinned to the bottom of the window. Rather than
+look for ChatGPT's composer by selector, which would be one more brittle thing
+to maintain, it asks the browser what is actually painted at the bottom of the
+window and treats anything fixed and wide as an obstacle. That works on any
+site and survives any redesign.
+
+### A real bug, caught by testing the positioning
+
+The first run put the panel 1px over the composer. The cause was worse than the
+symptom: the panel was being positioned **before its content was built**, so
+the decision about whether it fit below was made using the height of an empty
+panel.
+
+Fixed with a ResizeObserver on the panel, which also covers the height changing
+between the ready, working and saved states. The explicit reposition after
+build keeps the first paint from visibly jumping.
+
 ## Where things stand
 
 **Working and verified:**
@@ -138,7 +178,7 @@ so the panel cannot quietly grow back into an inspector.
 - Inspecting and removing credentials in PNG and JPEG, losslessly.
 - Independent confirmation of losslessness (ImageMagick, zero differing pixels).
 - The complete workflow in a real browser, through to a verified download.
-- 95 unit tests and 58 browser checks, all passing.
+- 95 unit tests and 64 browser checks, all passing.
 - Minimum permissions, checked against the code automatically.
 
 **Implemented but not verified:**

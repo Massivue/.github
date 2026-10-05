@@ -49,7 +49,13 @@ const PAGE = `<!doctype html>
 <style>
   body { background:#212121; color:#ececf1; font-family:system-ui; margin:0; }
   header { display:flex; align-items:center; gap:8px; padding:12px; }
-  main { max-width:760px; margin:0 auto; padding:24px; }
+  main { max-width:760px; margin:0 auto; padding:24px 24px 160px; }
+  #composer {
+    position: fixed; bottom: 0; left: 0; right: 0; height: 120px;
+    background:#303030; border-top:1px solid #444;
+    display:flex; align-items:center; justify-content:center; z-index: 5;
+  }
+  #composer input { width:60%; padding:14px; border-radius:24px; border:0; }
   .turn { margin:32px 0; }
   img.generated { max-width:100%; border-radius:12px; display:block; }
 </style></head>
@@ -82,6 +88,9 @@ const PAGE = `<!doctype html>
            alt="Long name picture">
     </div>
   </main>
+  <!-- Stands in for ChatGPT's message composer: pinned to the bottom of the
+       window, which is exactly what the panel has to avoid sitting behind. -->
+  <div id="composer"><input placeholder="Message ChatGPT"></div>
   <script>
     // Mimic ChatGPT streaming an image in after the page has settled, so the
     // test also covers images that appear late.

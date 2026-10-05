@@ -13,7 +13,7 @@ cd crediclean
 npm test                   # 95 unit tests, no network, no browser
 npm run fetch-samples      # download real C2PA-signed images (optional)
 npm test                   # now also runs 13 tests against those real files
-npm run test:e2e           # 58 checks in a real Chromium with the extension loaded
+npm run test:e2e           # 64 checks in a real Chromium with the extension loaded
 npm run verify             # check the manifest against the code
 ```
 
@@ -26,7 +26,7 @@ Playwright and the ability to listen on port 443.
 |---|---|---|
 | Unit tests (synthetic fixtures) | 82 | **Passed** |
 | Unit tests (real signed images) | 13 | **Passed** |
-| Browser tests (real Chromium, extension loaded) | 58 | **Passed** |
+| Browser tests (real Chromium, extension loaded) | 64 | **Passed** |
 | Independent check with ImageMagick | 3 images | **Passed** |
 | Live ChatGPT website | — | **Blocked**: no account in this environment |
 
@@ -132,7 +132,12 @@ ImageMagick is not our code, so this is genuinely independent.
 | Check | Result |
 |---|---|
 | Dark theme detected and applied | **Passed** (screenshot reviewed) |
-| Light theme | **Not tested**: the theme code reads the page background and has a fallback, but only dark was exercised |
+| Light theme | **Passed** (screenshot reviewed, and asserted in the browser test) |
+| Panel is compact: 378x208px, no scrolling | **Passed** |
+| Panel opens below the image when there is room | **Passed** |
+| Panel flips above the image when there is not | **Passed** |
+| Panel never sits behind the page's message box | **Passed** |
+| Panel stays fully inside the viewport | **Passed** |
 | Action buttons reachable without scrolling | **Passed**: this failed on the first run and the action row was made sticky to fix it |
 | An open panel survives scrolling | **Passed**: this failed on the first run and was fixed |
 | Keyboard focus rings | **Not tested** |

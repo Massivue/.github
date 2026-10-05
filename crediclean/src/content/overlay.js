@@ -91,6 +91,9 @@ export class Overlay {
   }
 
   unmount() {
+    for (const anchor of this.anchors.values()) {
+      if (anchor.resizeObserver) anchor.resizeObserver.disconnect();
+    }
     if (this.themeObserver) {
       this.themeObserver.disconnect();
       this.themeObserver = null;
@@ -107,11 +110,29 @@ export class Overlay {
   add(element, target, placement = 'bottom-left') {
     this.mount();
     this.layer.appendChild(element);
-    this.anchors.set(element, { element, target, placement });
+    const anchor = { element, target, placement };
+    this.anchors.set(element, anchor);
+
+    /*
+     * Watch the panel's own size.
+     *
+     * The panel is added before its content is built, and its height changes
+     * again as the user moves from ready to working to saved. Position depends
+     * on height: we cannot decide whether it fits below the image without
+     * knowing how tall it is. Without this, the first placement is computed
+     * from an empty panel and can leave the panel overlapping the composer.
+     */
+    if (placement === 'panel' && typeof ResizeObserver === 'function') {
+      anchor.resizeObserver = new ResizeObserver(() => this.scheduleReposition());
+      anchor.resizeObserver.observe(element);
+    }
+
     this.reposition();
   }
 
   remove(element) {
+    const anchor = this.anchors.get(element);
+    if (anchor && anchor.resizeObserver) anchor.resizeObserver.disconnect();
     this.anchors.delete(element);
     if (element && element.parentNode) element.remove();
   }
@@ -127,17 +148,23 @@ export class Overlay {
     if (this.listening) return;
     this.listening = true;
     this.onViewportChange = () => this.scheduleReposition();
+    // A resize can move or reveal the composer, so the cached measurement for
+    // every anchor has to go.
+    this.onResize = () => {
+      for (const anchor of this.anchors.values()) anchor.safeBottom = undefined;
+      this.scheduleReposition();
+    };
     // Capture phase with passive listeners: ChatGPT scrolls an inner container,
     // not the window, so we need to see scroll events from anywhere in the tree.
     window.addEventListener('scroll', this.onViewportChange, { capture: true, passive: true });
-    window.addEventListener('resize', this.onViewportChange, { passive: true });
+    window.addEventListener('resize', this.onResize, { passive: true });
   }
 
   stopListening() {
     if (!this.listening) return;
     this.listening = false;
     window.removeEventListener('scroll', this.onViewportChange, { capture: true });
-    window.removeEventListener('resize', this.onViewportChange);
+    window.removeEventListener('resize', this.onResize);
     if (this.frame) cancelAnimationFrame(this.frame);
     this.frame = null;
   }
@@ -150,6 +177,7 @@ export class Overlay {
     });
   }
 
+  /** Move every anchored element to sit over its target image. */
   /** Move every anchored element to sit over its target image. */
   reposition() {
     if (!this.layer) return;
@@ -171,9 +199,8 @@ export class Overlay {
       //
       // An open panel is exempt. It is a dialog the user is reading, and a
       // small scroll can easily carry its image off screen. Making the panel
-      // vanish mid-read, or worse mid-confirmation, would lose their place and
-      // their work. Instead the panel stays visible and is clamped into view
-      // below.
+      // vanish mid-read would lose their place and their work, so it stays
+      // visible and is kept inside the viewport instead.
       const offScreen =
         rect.bottom < -40 ||
         rect.top > viewportHeight + 40 ||
@@ -187,6 +214,11 @@ export class Overlay {
         continue;
       }
       element.classList.remove('cc-hidden');
+
+      if (isPanel) {
+        this.positionPanel(element, rect, anchor);
+        continue;
+      }
 
       // Page coordinates, because the host is positioned absolutely at the
       // document origin rather than fixed to the viewport.
@@ -206,12 +238,6 @@ export class Overlay {
           left = pageLeft + rect.width - inset;
           element.style.transform = 'translate(-100%, -100%)';
           break;
-        case 'panel':
-          // Panels sit just below the image, left-aligned, and are nudged back
-          // on screen if that would push them past the right edge.
-          top = pageTop + rect.height + 8;
-          left = Math.min(pageLeft, window.scrollX + viewportWidth - 340);
-          break;
         case 'bottom-left':
         default:
           top = pageTop + rect.height - inset;
@@ -220,17 +246,60 @@ export class Overlay {
           break;
       }
 
-      // Keep an open panel fully on screen, whatever its image is doing.
-      if (isPanel) {
-        const height = element.offsetHeight || 0;
-        const lowest = window.scrollY + viewportHeight - height - 8;
-        const highest = window.scrollY + 8;
-        top = Math.max(highest, Math.min(top, Math.max(highest, lowest)));
-      }
-
       element.style.top = `${Math.round(top)}px`;
       element.style.left = `${Math.round(Math.max(left, window.scrollX + 4))}px`;
     }
+  }
+
+  /**
+   * Place the panel so the whole of it is always visible.
+   *
+   * The rules, in order:
+   *   1. Prefer directly below the image, which is where the eye already is.
+   *   2. If it would not fit there, flip it above the image.
+   *   3. If it fits in neither, put it in whichever gap is larger and clamp.
+   *   4. Clamp horizontally so it never runs off either edge.
+   *
+   * "Below" accounts for anything pinned to the bottom of the window, such as
+   * ChatGPT's message composer, so the panel does not end up behind it.
+   */
+  positionPanel(element, rect, anchor) {
+    const gap = 8;
+    const margin = 8;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    const height = element.offsetHeight || 0;
+    const width = element.offsetWidth || 0;
+
+    // The usable bottom edge: the window, or the top of whatever is pinned
+    // there. Measured on open and on resize rather than every scroll frame.
+    if (anchor.safeBottom === undefined) anchor.safeBottom = measureSafeBottom();
+    const safeBottom = Math.min(anchor.safeBottom, viewportHeight) - margin;
+
+    const spaceBelow = safeBottom - rect.bottom - gap;
+    const spaceAbove = rect.top - margin - gap;
+
+    let top;
+    if (spaceBelow >= height) {
+      top = rect.bottom + gap; // 1. below, the preferred position
+    } else if (spaceAbove >= height) {
+      top = rect.top - height - gap; // 2. above
+    } else if (spaceBelow >= spaceAbove) {
+      top = safeBottom - height; // 3. more room below, so sit on that edge
+    } else {
+      top = margin;
+    }
+
+    // 4. Never leave the viewport, whatever the arithmetic above produced.
+    top = Math.max(margin, Math.min(top, Math.max(margin, safeBottom - height)));
+
+    let left = rect.left;
+    left = Math.max(margin, Math.min(left, viewportWidth - width - margin));
+
+    element.style.transform = '';
+    element.style.top = `${Math.round(top + window.scrollY)}px`;
+    element.style.left = `${Math.round(left + window.scrollX)}px`;
   }
 }
 
@@ -265,4 +334,49 @@ function parseRgb(value) {
     b: parseFloat(match[3]),
     alpha: match[4] === undefined ? 1 : parseFloat(match[4]),
   };
+}
+
+/**
+ * Find the top edge of anything pinned to the bottom of the window, so the
+ * panel can avoid sitting behind it. On ChatGPT this is the message composer.
+ *
+ * Rather than look for ChatGPT's own elements, which would be another brittle
+ * selector to maintain, this asks the browser what is actually painted at the
+ * bottom of the window and keeps anything that is pinned there and wide. That
+ * works for any site and survives any redesign.
+ *
+ * @returns {number} a viewport y coordinate; the window height if nothing is pinned
+ */
+export function measureSafeBottom() {
+  const viewportHeight = window.innerHeight;
+  const viewportWidth = window.innerWidth;
+  let safeBottom = viewportHeight;
+
+  if (typeof document.elementsFromPoint !== 'function') return safeBottom;
+
+  // Probe a few x positions: a composer is usually centred, but need not be.
+  for (const x of [viewportWidth / 2, viewportWidth / 3, (viewportWidth * 2) / 3]) {
+    let found;
+    try {
+      found = document.elementsFromPoint(Math.round(x), viewportHeight - 8);
+    } catch {
+      continue;
+    }
+    for (const node of found) {
+      const style = getComputedStyle(node);
+      if (style.position !== 'fixed' && style.position !== 'sticky') continue;
+
+      const box = node.getBoundingClientRect();
+      // A bar across the bottom, not a small floating button...
+      if (box.width < viewportWidth * 0.3) continue;
+      // ...actually reaching the bottom...
+      if (box.bottom < viewportHeight - 24) continue;
+      // ...and not a full-window overlay, which would leave nowhere to go.
+      if (box.top < viewportHeight * 0.4) continue;
+
+      safeBottom = Math.min(safeBottom, box.top);
+      break;
+    }
+  }
+  return safeBottom;
 }

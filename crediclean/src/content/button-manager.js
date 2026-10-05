@@ -31,13 +31,6 @@ function element(tag, className, text) {
   return node;
 }
 
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes)) return 'unknown size';
-  if (bytes < 1024) return `${bytes} bytes`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
 export class ButtonManager {
   /**
    * @param {object} args
@@ -159,6 +152,9 @@ export class ButtonManager {
     this.openPanel = { panel, img: entry.img, body };
     this.overlay.add(panel, entry.img, 'panel');
     build(body, { close: () => this.closePanel() });
+    // Position again now the content exists, so the first paint is already in
+    // the right place rather than visibly jumping once the observer fires.
+    this.overlay.reposition();
     panel.focus({ preventScroll: true });
 
     // Clicking anywhere else closes the panel. Clicks that originate inside
@@ -243,7 +239,14 @@ export function renderPanel(body, state) {
     done.type = 'button';
     done.disabled = true;
     body.append(wrapAction(done));
-    body.append(element('p', 'cc-hint', `Saved as ${filename ? withSuffix(filename) : 'a new file'}. Your original is unchanged.`));
+    body.append(
+      element(
+        'p',
+        'cc-hint',
+        `Saved as ${filename ? withSuffix(filename) : 'a new file'}. Your original is unchanged, ` +
+          'and watermarks inside the picture are not affected.',
+      ),
+    );
     return;
   }
 
@@ -275,12 +278,6 @@ export function renderPanel(body, state) {
     });
   }
   body.append(wrapAction(remove));
-
-  // One short line. It carries the single caveat that matters most, because
-  // metadata removal is routinely mistaken for making an image untraceable.
-  body.append(
-    element('p', 'cc-hint', 'Removes supported credentials. Watermarks inside the picture are not affected.'),
-  );
 }
 
 /** The three facts, and only these three. */
@@ -351,4 +348,4 @@ export function addFact(list, label, value) {
   return dd;
 }
 
-export { element as createElement, formatBytes };
+export { element as createElement };

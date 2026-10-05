@@ -214,9 +214,87 @@ async function main() {
     check('panel does not need scrolling',
       scrollState.scrollHeight <= scrollState.clientHeight + 1,
       `content ${scrollState.scrollHeight}px in ${scrollState.clientHeight}px`);
-    // The panel it replaced was 506px tall and scrolled. This guards against
-    // that returning, with headroom for the hint wrapping to a second line.
-    check('panel is short', panelBox.height < 300, `height was ${panelBox.height}`);
+    // The panel it replaced was 506px tall and scrolled.
+    check('panel is short', panelBox.height < 250, `height was ${panelBox.height}`);
+    check('panel width is in the 360-400px band',
+      panelBox.width >= 360 && panelBox.width <= 400, `width was ${panelBox.width}`);
+
+    /* --- the panel is always fully visible and clear of the composer ------ */
+
+    const geometry = () =>
+      page.evaluate(() => {
+        const root = document.getElementById('crediclean-overlay-host').shadowRoot;
+        const panel = root.querySelector('.cc-panel');
+        if (!panel) return null;
+        const p = panel.getBoundingClientRect();
+        const composer = document.getElementById('composer').getBoundingClientRect();
+        return {
+          panel: { top: p.top, bottom: p.bottom, left: p.left, right: p.right, height: p.height },
+          composerTop: composer.top,
+          viewport: { w: window.innerWidth, h: window.innerHeight },
+        };
+      });
+
+    const g1 = await geometry();
+    check('panel is fully inside the viewport',
+      g1.panel.top >= 0 && g1.panel.bottom <= g1.viewport.h &&
+        g1.panel.left >= 0 && g1.panel.right <= g1.viewport.w,
+      JSON.stringify(g1.panel));
+    check('panel does not sit behind the composer',
+      g1.panel.bottom <= g1.composerTop + 1,
+      `panel bottom ${g1.panel.bottom} vs composer top ${g1.composerTop}`);
+
+    await page.keyboard.press('Escape');
+    await page.locator('body').click({ position: { x: 5, y: 5 } });
+    await page.waitForTimeout(300);
+
+    /* --- an image low on screen flips the panel above it ------------------ */
+
+    // Put the signed image's bottom just above the composer, so there is no
+    // room below it for the panel.
+    await page.evaluate(() => {
+      const img = document.getElementById('signed');
+      const composerTop = document.getElementById('composer').getBoundingClientRect().top;
+      const rect = img.getBoundingClientRect();
+      window.scrollBy(0, rect.bottom - composerTop + 20);
+    });
+    await page.waitForTimeout(500);
+
+    const lowImage = await page.evaluate(() => {
+      const r = document.getElementById('signed').getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom };
+    });
+
+    await page.locator('#signed[data-crediclean-handled]').scrollIntoViewIfNeeded().catch(() => {});
+    const lowBadge = page.locator('.cc-badge').first();
+    if (await lowBadge.isVisible()) {
+      await lowBadge.click();
+      await page.waitForSelector('.cc-panel', { timeout: 10000 });
+      const g2 = await geometry();
+
+      check('with no room below, the panel opens ABOVE the image',
+        g2.panel.bottom <= lowImage.bottom + 1,
+        `panel bottom ${g2.panel.bottom}, image bottom ${lowImage.bottom}`);
+      check('the flipped panel is still fully on screen',
+        g2.panel.top >= 0 && g2.panel.bottom <= g2.viewport.h,
+        JSON.stringify(g2.panel));
+      check('the flipped panel still clears the composer',
+        g2.panel.bottom <= g2.composerTop + 1,
+        `panel bottom ${g2.panel.bottom} vs composer top ${g2.composerTop}`);
+
+      await page.keyboard.press('Escape');
+      await page.locator('body').click({ position: { x: 5, y: 5 } });
+      await page.waitForTimeout(300);
+    } else {
+      check('with no room below, the panel opens ABOVE the image', false, 'badge was not clickable');
+    }
+
+    /* --- back to a normal position for the removal test ------------------- */
+
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(500);
+    await page.locator('.cc-badge').first().click();
+    await page.waitForSelector('.cc-panel', { timeout: 10000 });
 
     /* --- removal happens with ONE click, no second confirmation ---------- */
 
