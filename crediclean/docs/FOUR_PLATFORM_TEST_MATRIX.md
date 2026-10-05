@@ -12,7 +12,7 @@ Nothing is marked PASS unless it was actually run.
 | Platform | Image detected | Original retrieved | C2PA detected | Processing | Download | Result |
 |---|---|---|---|---|---|---|
 | **ChatGPT** | PASS | PASS | PASS | PASS | PASS | **Working on the live site** |
-| **Gemini** | **PASS (live)** | PASS¹ ² | PASS¹ ² | PASS | PASS¹ | **Detection live; retrieval fix unverified live** |
+| **Gemini** | PASS | PASS | PASS | PASS | PASS | **Working on the live site** |
 | **Copilot** | PASS¹ | PASS¹ | PASS¹ | PASS | PASS¹ | **Unverified on the live site** |
 | **Grok** | PASS¹ | PASS¹ | NOT CONFIRMED | PASS² | PASS² | **Honest fallback only** |
 
@@ -28,9 +28,17 @@ re-tested on the live site.
 ³ The engine is shared and verified. Whether a real Grok image contains
 anything to process is unknown.
 
-## Why ChatGPT is different
+## Confirmed live: ChatGPT and Gemini
 
-ChatGPT is the only row where "PASS" means the live website. The product owner
+Both were confirmed end to end on their real websites by the product owner on
+5 October 2026: the button appears, credentials are detected, removal runs on
+one click and the processed file downloads.
+
+Gemini took four attempts, because it serves a credential-free derivative in
+the conversation and keeps the real original behind a separate address that
+appears only in its API responses. See FOUR_PLATFORM_SUPPORT.md.
+
+Copilot and Grok remain untested on their live sites. The product owner
 installed the extension in Chrome, opened real ChatGPT, and confirmed the
 button appeared and Content Credentials were detected.
 

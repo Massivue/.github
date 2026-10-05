@@ -14,7 +14,7 @@ Version 0.2.0. Free, open source, no account, no server.
 | Platform | Status |
 |---|---|
 | **ChatGPT** | **Working**, confirmed on the live site |
-| **Gemini** | Detection **confirmed live**. Retrieval fixed to fetch the original rather than a resized copy; the fix itself is not yet confirmed live |
+| **Gemini** | **Working**, confirmed on the live site |
 | **Copilot** | Built and tested against a reconstruction, **not yet confirmed live** |
 | **Grok** | Detection built. Whether Grok images carry credentials at all is **unknown**, so the extension reports what it finds and invents nothing |
 
