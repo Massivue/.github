@@ -130,6 +130,70 @@
     };
   }
 
+  /* --- downloads triggered by a link ---------------------------------- */
+
+  /*
+   * A download button is often an <a download>, and clicking one does not go
+   * through fetch or XMLHttpRequest, so nothing above would see it.
+   *
+   * This matters here specifically: reporting suggests Gemini attaches
+   * Content Credentials only to the FULL-SIZE DOWNLOAD, not to the image it
+   * displays in the conversation. If that is right, the address behind the
+   * download button is the only one that leads to a credentialed file, and
+   * catching the click is the only way to learn it.
+   *
+   * Capture phase, passive, and purely observational: the click is never
+   * intercepted or prevented.
+   */
+  function recordAnchor(anchor) {
+    try {
+      if (!anchor || anchor.tagName !== 'A') return;
+      const href = anchor.href;
+      if (typeof href !== 'string' || !/^https?:/i.test(href)) return;
+      // A download link is worth recording whatever its content type, since we
+      // cannot see headers for a navigation.
+      record(href, anchor.hasAttribute('download') ? 'image/' : '', 0);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  try {
+    document.addEventListener(
+      'click',
+      (event) => {
+        try {
+          const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+          for (const node of path) {
+            if (node && node.tagName === 'A') {
+              recordAnchor(node);
+              break;
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      },
+      { capture: true, passive: true },
+    );
+  } catch {
+    /* ignore */
+  }
+
+  // Programmatic clicks, which is how many download buttons work.
+  try {
+    const anchorPrototype = window.HTMLAnchorElement && window.HTMLAnchorElement.prototype;
+    if (anchorPrototype && typeof anchorPrototype.click === 'function') {
+      const originalClick = anchorPrototype.click;
+      anchorPrototype.click = function crediCleanAnchorClick(...args) {
+        recordAnchor(this);
+        return originalClick.apply(this, args);
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+
   /* --- answering the extension ---------------------------------------- */
 
   /*

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CrediClean",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Inspect and remove supported Content Credentials from AI-generated images in ChatGPT, Gemini, Copilot and Grok.",
   "minimum_chrome_version": "111",
   "permissions": [

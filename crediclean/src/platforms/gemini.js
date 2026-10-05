@@ -107,6 +107,24 @@ export const geminiAdapter = defineAdapter({
       /* fall through to the page's own address */
     }
 
+    /*
+     * Gemini's display images sit under an `/rd-gg/` path. "rd" most plausibly
+     * means rendered, so the same identifier under `/gg/` may be the file that
+     * was rendered from. A guess, and a cheap one: a wrong address simply
+     * fails to load, and anything that does load still has to pass the
+     * same-image check before it is used.
+     */
+    try {
+      const parsed = new URL(url);
+      if (parsed.pathname.includes('/rd-gg/')) {
+        const unrendered = new URL(parsed.href);
+        unrendered.pathname = parsed.pathname.replace('/rd-gg/', '/gg/');
+        if (!candidates.includes(unrendered.href)) candidates.push(unrendered.href);
+      }
+    } catch {
+      /* ignore */
+    }
+
     // Always keep the address from the page as the last resort.
     if (!candidates.includes(url)) candidates.push(url);
     return candidates;
