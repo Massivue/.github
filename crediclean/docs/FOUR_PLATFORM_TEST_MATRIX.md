@@ -14,7 +14,7 @@ Nothing is marked PASS unless it was actually run.
 | **ChatGPT** | PASS | PASS | PASS | PASS | PASS | **Working on the live site** |
 | **Gemini** | PASS | PASS | PASS | PASS | PASS | **Working on the live site** |
 | **Copilot** | PASS¹ | PASS¹ | PASS¹ | PASS | PASS¹ | **Unverified on the live site** |
-| **Grok** | PASS¹ | PASS¹ | NOT CONFIRMED | PASS² | PASS² | **Honest fallback only** |
+| **Grok** | PASS | PASS | PASS | PASS | PASS | **Working on the live site** |
 
 ¹ Against **our reconstruction** of the page, in a real Chromium with the real
 extension loaded. Not against the live site, because this environment has no
@@ -38,7 +38,11 @@ Gemini took four attempts, because it serves a credential-free derivative in
 the conversation and keeps the real original behind a separate address that
 appears only in its API responses. See FOUR_PLATFORM_SUPPORT.md.
 
-Copilot and Grok remain untested on their live sites. The product owner
+Grok was also confirmed working on its live site, which answers the open
+question in FOUR_PLATFORM_SUPPORT.md: Grok images do carry credentials this
+extension can read and remove.
+
+Copilot remains untested on its live site. The product owner
 installed the extension in Chrome, opened real ChatGPT, and confirmed the
 button appeared and Content Credentials were detected.
 

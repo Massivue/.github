@@ -275,7 +275,7 @@ permission than this extension needs.
 | How images are shown | **Not confirmed** |
 | Retrieving the original | **Not confirmed.** xAI documents that generated image URLs are temporary |
 | Format | **Not confirmed** |
-| **C2PA** | **NOT CONFIRMED. We could not establish this either way.** |
+| **C2PA** | **CONFIRMED PRESENT.** Tested on the live site 5 October 2026: credentials were detected and removed successfully. This resolves the uncertainty recorded below, which is kept as a record of what research alone could establish. |
 | Other provenance | A **visible corner logo**, which is part of the picture and not metadata — **vendor-documented** |
 | Detection | Implemented, **not confirmed** |
 | Processing | **Unknown.** The engine runs; whether it finds anything is unknown |

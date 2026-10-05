@@ -16,7 +16,7 @@ Version 0.2.0. Free, open source, no account, no server.
 | **ChatGPT** | **Working**, confirmed on the live site |
 | **Gemini** | **Working**, confirmed on the live site |
 | **Copilot** | Built and tested against a reconstruction, **not yet confirmed live** |
-| **Grok** | Detection built. Whether Grok images carry credentials at all is **unknown**, so the extension reports what it finds and invents nothing |
+| **Grok** | **Working**, confirmed on the live site |
 
 The credential engine is shared by all four and is verified against real signed
 files. The open question for the three unconfirmed platforms is whether the
@@ -122,7 +122,8 @@ is, credentials and all.
 
 ## Settings
 
-Click the CrediClean icon in the toolbar.
+Click the CrediClean icon in the toolbar. The popup shows which site you are
+on, links to the supported ones, and three settings.
 
 | Setting | Default | What it does |
 |---|---|---|
