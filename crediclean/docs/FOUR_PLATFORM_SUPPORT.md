@@ -160,9 +160,43 @@ never serves a file with credentials to the browser, then no extension running
 in the browser can find any, and "no supported credentials found" is the
 correct and honest answer.
 
-### The remaining unknown
+### Resolved: Gemini serves two different files
 
-Whether the file Gemini downloads carries C2PA at all. If Google's servers hand the browser an
+Confirmed on a live image, 5 October 2026:
+
+| | Shown in the conversation | Gemini's full-size download |
+|---|---|---|
+| Address | `lh3.googleusercontent.com/rd-gg/AJWXcNen2jLL...` | `.../AJWXcNcIkIpyV0n2...` |
+| Format | JPEG | **PNG** |
+| Dimensions | 1024 x 559 | **1408 x 768** |
+| Credentials | none | **present** |
+
+They are separate files with separate identifiers that diverge after a few
+characters, so the full-size address cannot be derived from the display one.
+The conversation shows a rendered derivative; the credentials live only in the
+original.
+
+**So Gemini images can be processed.** The problem was never the credential
+engine, and never the format. It was that the extension was reading the wrong
+file.
+
+### How the original is found, without the user downloading anything
+
+Gemini's own download button knows the full-size address, which means the app
+was told it, which means it arrived in an API response. So the page-world
+observer now scans text responses for Google image addresses, including
+JSON-escaped ones. The response is **cloned** before reading, and cloning does
+not consume the body, so the page's own use of it is unaffected.
+
+Everything else was already in place: the candidate list tries each address,
+and the loader prefers whichever one actually carries credentials rather than
+trusting the order. That is what lands on the original rather than the
+derivative.
+
+A browser test reproduces this exactly: the conversation displays a
+credential-free derivative from a blob, the page contains no download link at
+all, and the full-size address appears only inside a JSON API response. The
+test asserts the extension finds the credentials with nothing clicked. If Google's servers hand the browser an
 already-stripped image, then nothing reaches the browser that has credentials
 in it, no extension can recover them, and "no supported credentials found" is
 simply the correct answer. The way to settle this is to download an image using

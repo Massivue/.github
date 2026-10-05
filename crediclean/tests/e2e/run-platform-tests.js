@@ -61,6 +61,15 @@ const unsigned = buildPng({ width: 1024, height: 768 });
 const strippedDerivative = buildPng({ width: 526, height: 296 });
 /* A different image entirely, to prove a wrong candidate is refused. */
 const decoy = buildPng({ width: 300, height: 900, c2pa: buildC2paManifestStore() });
+/* Gemini, to scale: the rendered derivative shown in the conversation... */
+const geminiDisplay = buildPng({ width: 1024, height: 559 });
+/* ...and the genuine full-size original, which is where the credentials are. */
+const geminiOriginal = buildPng({
+  width: 1408,
+  height: 768,
+  c2pa: buildC2paManifestStore({ claimGenerator: 'Google Gemini/1.0' }),
+  xmp: 'provenance',
+});
 const avatar = buildPng({ width: 32, height: 32 });
 
 /** One HTTPS server answering for every platform host. */
@@ -86,6 +95,29 @@ function startServer() {
        * carries no credentials. This is the behaviour that made real Gemini
        * images report "no supported credentials found".
        */
+      /*
+       * The conversation API response. The full-size original's address
+       * appears here, JSON-escaped, and nowhere else.
+       */
+      if (url.pathname === '/api/conversation') {
+        const body = JSON.stringify({
+          turns: [
+            {
+              text: 'Here is your image.',
+              media: [
+                {
+                  display: 'https://lh3.googleusercontent.com/rd-gg/DISPLAYID',
+                  fullSize: 'https://lh3.googleusercontent.com/FULLSIZEID',
+                },
+              ],
+            },
+          ],
+        }).replace(/\//g, '\\/'); // escape slashes, as a real JSON payload does
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(body);
+        return;
+      }
+
       if (host === 'lh3.googleusercontent.com') {
         if (url.pathname.startsWith('/a/')) {
           response.writeHead(200, { 'content-type': 'image/png' });
@@ -98,9 +130,19 @@ function startServer() {
           response.end(Buffer.from(decoy));
           return;
         }
-        // The real file, available only at the original-size address.
-        const wantsOriginal = url.pathname.endsWith('=s0');
-        const bytes = wantsOriginal ? signed : strippedDerivative;
+        // The rendered derivative the conversation shows: no credentials.
+        if (url.pathname.startsWith('/rd-gg/')) {
+          response.writeHead(200, { 'content-type': 'image/png', 'content-length': geminiDisplay.length });
+          response.end(Buffer.from(geminiDisplay));
+          return;
+        }
+        // The genuine full-size original, with credentials.
+        if (url.pathname.startsWith('/FULLSIZEID')) {
+          response.writeHead(200, { 'content-type': 'image/png', 'content-length': geminiOriginal.length });
+          response.end(Buffer.from(geminiOriginal));
+          return;
+        }
+        const bytes = url.pathname.endsWith('=s0') ? signed : strippedDerivative;
         response.writeHead(200, { 'content-type': 'image/png', 'content-length': bytes.length });
         response.end(Buffer.from(bytes));
         return;
@@ -134,6 +176,12 @@ function startServer() {
 async function testPlatform(context, adapter) {
   const { host } = PLATFORM_PAGES[adapter.id];
   const expectCredentials = adapter.id !== 'grok'; // Grok's page serves an unsigned image on purpose
+  /*
+   * Gemini is the exception: its conversation shows a 1024x559 derivative
+   * while the real original is 1408x768, so the extension is expected to end
+   * up on the larger file. Everywhere else the displayed image is the file.
+   */
+  const expected = adapter.id === 'gemini' ? { width: 1408, height: 768 } : { width: 1024, height: 768 };
   console.log(`\n--- ${adapter.name} (${host}) ---`);
 
   const page = await context.newPage();
@@ -165,7 +213,8 @@ async function testPlatform(context, adapter) {
     check(`${adapter.id}: the panel shows Format, Size and File`,
       /Format/.test(panelText) && /Size/.test(panelText) && /File/.test(panelText), panelText.slice(0, 120));
     check(`${adapter.id}: the panel shows the real dimensions`,
-      /1024\s*[x×]\s*768/.test(panelText), panelText.slice(0, 120));
+      new RegExp(`${expected.width}\\s*[x×]\\s*${expected.height}`).test(panelText),
+      panelText.slice(0, 120));
     check(`${adapter.id}: the panel shows no technical credential detail`,
       !/\bC2PA\b|manifest|c2pa\.|provenance/i.test(panelText), panelText.slice(0, 160));
 
@@ -185,24 +234,21 @@ async function testPlatform(context, adapter) {
       // been stripped, so finding credentials cannot come from the blob.
       const displayedIsBare = await page.evaluate(async () => {
         const img = document.getElementById('generated');
-        const bytes = new Uint8Array(await (await fetch(img.src)).arrayBuffer());
-        let i = 2;
-        const markers = [];
-        while (i < bytes.length - 1 && bytes[i] === 0xff) {
-          const m = bytes[i + 1];
-          if (m === 0xda) break;
-          markers.push(m);
-          i += 2 + ((bytes[i + 2] << 8) | bytes[i + 3]);
-        }
-        // 0xE1 is EXIF/XMP, 0xEB is APP11 where C2PA lives.
-        return !markers.includes(0xe1) && !markers.includes(0xeb);
+        const text = new TextDecoder('latin1').decode(
+          new Uint8Array(await (await fetch(img.src)).arrayBuffer()),
+        );
+        return !text.includes('caBX') && !text.includes('jumb');
       });
-      check('gemini: the displayed blob really has had its metadata destroyed', displayedIsBare === true);
+      check('gemini: the image shown in the conversation really has no credentials',
+        displayedIsBare === true);
 
-      check('gemini: finds credentials by observing what the page downloaded',
+      check('gemini: no download link exists in the page at all',
+        (await page.locator('a[download]').count()) === 0);
+
+      check('gemini: finds credentials WITHOUT any download being clicked',
         /Content Credentials found/i.test(panelText), panelText.slice(0, 160));
-      check('gemini: reports the ORIGINAL dimensions, not the decoy\'s or the derivative\'s',
-        /1024\s*[x\u00d7]\s*768/.test(panelText) && !/300|526/.test(panelText), panelText.slice(0, 160));
+      check('gemini: uses the full-size original, not the rendered derivative',
+        /1408\s*[x\u00d7]\s*768/.test(panelText) && !/1024|300/.test(panelText), panelText.slice(0, 160));
     }
 
     if (expectCredentials) {
@@ -223,7 +269,8 @@ async function testPlatform(context, adapter) {
       check(`${adapter.id}: the downloaded file has no credentials left`,
         report.status === STATUS.NO_CREDENTIALS_DETECTED, report.status);
       check(`${adapter.id}: dimensions survive`,
-        report.dimensions?.width === 1024 && report.dimensions?.height === 768);
+        report.dimensions?.width === expected.width && report.dimensions?.height === expected.height,
+        JSON.stringify(report.dimensions));
       check(`${adapter.id}: no credential bytes survive`,
         !Buffer.from(saved).toString('latin1').includes('jumb'));
 

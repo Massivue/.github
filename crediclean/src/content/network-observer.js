@@ -61,6 +61,53 @@
     }
   }
 
+  /* --- finding addresses inside API responses -------------------------- */
+
+  /*
+   * The display image and the full-size original are SEPARATE files with
+   * different identifiers. Confirmed on a live Gemini image:
+   *
+   *   displayed : /rd-gg/AJWXcNen2jLL...   JPEG 1024x559, no credentials
+   *   full size : AJWXcNcIkIpyV0n2...      PNG  1408x768, credentials present
+   *
+   * The identifiers diverge after a few characters, so the full-size address
+   * cannot be derived from the display one by rewriting it. But Gemini's own
+   * download button knows it, which means the app was told it, which means it
+   * arrived in an API response.
+   *
+   * So text responses are scanned for Google image addresses. The response is
+   * CLONED first: cloning does not consume the body, so the page's own read of
+   * it is completely unaffected.
+   */
+  const IMAGE_URL_PATTERN = /https:(?:\\?\/){2}lh\d*\.googleusercontent\.com(?:\\?\/)[^"'\\\s<>)]+/g;
+  const MAX_SCAN_CHARS = 2 * 1024 * 1024;
+  const MAX_URLS_PER_RESPONSE = 20;
+
+  function scanTextForImageUrls(text) {
+    try {
+      if (typeof text !== 'string' || text.length === 0) return;
+      const sample = text.length > MAX_SCAN_CHARS ? text.slice(0, MAX_SCAN_CHARS) : text;
+      const matches = sample.match(IMAGE_URL_PATTERN);
+      if (!matches) return;
+
+      let added = 0;
+      for (const match of matches) {
+        if (added >= MAX_URLS_PER_RESPONSE) break;
+        // JSON escapes forward slashes, so undo that before use.
+        const url = match.replace(/\\\//g, '/');
+        if (/googleusercontent\.com\/a\//.test(url)) continue; // profile pictures
+        record(url, 'image/', 0);
+        added += 1;
+      }
+    } catch {
+      /* scanning must never affect the page */
+    }
+  }
+
+  function isTextResponse(contentType) {
+    return /json|text|javascript|xml/i.test(contentType || '');
+  }
+
   /* --- fetch ---------------------------------------------------------- */
 
   const originalFetch = window.fetch;
@@ -74,11 +121,22 @@
               try {
                 // Headers only. The body is never touched, so the page's own
                 // read of it is completely unaffected.
+                const contentType = response.headers && response.headers.get('content-type');
                 record(
                   response.url,
-                  response.headers && response.headers.get('content-type'),
+                  contentType,
                   response.headers && response.headers.get('content-length'),
                 );
+
+                // Look inside API responses for the full-size image address.
+                if (isTextResponse(contentType) && typeof response.clone === 'function') {
+                  // clone() leaves the original body untouched.
+                  response
+                    .clone()
+                    .text()
+                    .then(scanTextForImageUrls)
+                    .catch(() => {});
+                }
               } catch {
                 /* ignore */
               }
@@ -114,11 +172,18 @@
       try {
         this.addEventListener('load', () => {
           try {
+            const contentType = this.getResponseHeader && this.getResponseHeader('content-type');
             record(
               this.responseURL || this[FLAG],
-              this.getResponseHeader && this.getResponseHeader('content-type'),
+              contentType,
               this.getResponseHeader && this.getResponseHeader('content-length'),
             );
+
+            // Reading responseText does not consume anything: it is already
+            // buffered by the time the load event fires.
+            if (isTextResponse(contentType) && (this.responseType === '' || this.responseType === 'text')) {
+              scanTextForImageUrls(this.responseText);
+            }
           } catch {
             /* ignore */
           }

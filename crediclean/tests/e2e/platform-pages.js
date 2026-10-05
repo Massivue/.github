@@ -32,22 +32,23 @@ export const PLATFORM_PAGES = {
   gemini: {
     host: 'gemini.google.com',
     /*
-     * This page reproduces the REAL Gemini behaviour, as diagnosed from a live
+     * This page reproduces the REAL Gemini behaviour, confirmed on a live
      * image on 5 October 2026.
      *
-     * It downloads the genuine signed file, draws it to a canvas, and shows
-     * the canvas output from a blob. That really does destroy the metadata,
-     * exactly as the live page does: the diagnosed image was a JPEG with no
-     * EXIF, no XMP and no APP11 segment.
+     * The conversation shows a rendered derivative: a different file, at a
+     * different address, with no credentials in it. The genuine full-size
+     * original is a separate resource with its own identifier, which cannot be
+     * derived from the display address. It carries the credentials.
      *
-     * Crucially, and matching what the live page actually looks like, there is
-     * NO link and NO attribute anywhere near the image holding the original's
-     * address. Running the DOM snippet on the real page returned empty lists
-     * for both. So the only route to the original is observing the download,
-     * which is what this test exercises.
+     *   displayed : /rd-gg/DISPLAYID   1024x559, no credentials
+     *   full size : /FULLSIZEID        1408x768, credentials present
      *
-     * A differently shaped decoy is fetched too, so the test also proves a
-     * wrong recorded address is refused rather than processed.
+     * The page never links to the full-size file. Its address appears only
+     * inside an API response, JSON-escaped, which is the one place the
+     * extension can find it without the user downloading anything first.
+     *
+     * NOTHING here clicks a download button. That is the point: the extension
+     * must work on its own.
      */
     imageHost: 'lh3.googleusercontent.com',
     body: `
@@ -64,28 +65,18 @@ export const PLATFORM_PAGES = {
         </model-response>
       </main>
       <script>
-        const REAL = 'https://lh3.googleusercontent.com/gg/REALID=s0';
-        const DECOY = 'https://lh3.googleusercontent.com/gg/DECOYID=w300-h900';
+        // The app loads the conversation. The response mentions the full-size
+        // original, escaped as JSON does it. Nothing else ever reveals it.
+        fetch('https://gemini.google.com/api/conversation')
+          .then((response) => response.json())
+          .then((data) => { window.__loaded = data; })
+          .catch(() => {});
 
-        // A wrong-shaped image the page also downloads. Must be refused.
-        fetch(DECOY).then((r) => r.blob()).catch(() => {});
-
-        // The real file, then a canvas re-encode, exactly as Gemini does.
-        fetch(REAL)
+        // The conversation displays a rendered derivative, via a blob.
+        fetch('https://lh3.googleusercontent.com/rd-gg/DISPLAYID')
           .then((response) => response.blob())
-          .then((blob) => createImageBitmap(blob))
-          .then((bitmap) => {
-            const canvas = document.createElement('canvas');
-            canvas.width = bitmap.width;
-            canvas.height = bitmap.height;
-            canvas.getContext('2d').drawImage(bitmap, 0, 0);
-            canvas.toBlob(
-              (encoded) => {
-                document.getElementById('generated').src = URL.createObjectURL(encoded);
-              },
-              'image/jpeg',
-              0.92,
-            );
+          .then((blob) => {
+            document.getElementById('generated').src = URL.createObjectURL(blob);
           })
           .catch(() => {});
       </script>`,
