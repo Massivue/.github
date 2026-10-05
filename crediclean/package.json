@@ -14,7 +14,8 @@
     "fetch-samples": "bash scripts/fetch-samples.sh",
     "verify": "node scripts/verify-manifest.js",
     "package": "bash scripts/package.sh",
-    "test:e2e": "node tests/e2e/run-browser-test.js"
+    "test:e2e": "node tests/e2e/run-browser-test.js",
+    "test:platforms": "node tests/e2e/run-platform-tests.js"
   },
   "devDependencies": {}
 }

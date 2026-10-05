@@ -25,7 +25,7 @@ import { SIZE_LIMITS, FETCH_TIMEOUT_MS } from '../shared/constants.js';
  * original file. If we picked whatever the browser happened to render we could
  * hand the user a downscaled copy.
  */
-export function bestSourceUrl(img) {
+export function bestSourceUrl(img, adapter = null) {
   const candidates = [];
 
   const srcset = img.getAttribute('srcset');
@@ -49,11 +49,27 @@ export function bestSourceUrl(img) {
   candidates.sort((a, b) => b.weight - a.weight);
 
   // Resolve relative addresses against the page.
+  let chosen = candidates[0].url;
   try {
-    return new URL(candidates[0].url, document.baseURI).href;
+    chosen = new URL(chosen, document.baseURI).href;
   } catch {
-    return candidates[0].url;
+    /* keep the raw value */
   }
+
+  /*
+   * Some sites serve resized variants of the same image and show one of those
+   * in the page. An adapter can rewrite the address to the full-size original,
+   * so the user never gets a downscaled copy and the metadata we read is the
+   * real file's.
+   */
+  if (adapter && typeof adapter.resolveSourceUrl === 'function') {
+    try {
+      return adapter.resolveSourceUrl(chosen) || chosen;
+    } catch {
+      return chosen;
+    }
+  }
+  return chosen;
 }
 
 /**

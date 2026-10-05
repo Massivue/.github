@@ -1,15 +1,17 @@
 /**
- * Finds the generated images in a ChatGPT conversation.
+ * Finds the generated images on a supported AI platform.
  *
  * ============================================================================
  * THIS IS THE FRAGILE PART OF THE EXTENSION. IF CREDICLEAN STOPS SHOWING
- * BUTTONS AFTER A CHATGPT UPDATE, THE FIX IS ALMOST CERTAINLY IN THIS FILE.
+ * BUTTONS AFTER A SITE UPDATE, THE FIX IS ALMOST CERTAINLY NOT HERE BUT IN
+ * THAT PLATFORM'S ADAPTER IN src/platforms/. This file holds the shared
+ * decision logic; each site's selectors and address rules live in its adapter.
  * ============================================================================
  *
- * ChatGPT's page structure is not a public API. It is generated markup that can
- * change without notice, and its CSS class names are compiled and meaningless.
- * So this module deliberately avoids matching class names. Instead it layers
- * three weaker but much more durable signals:
+ * These sites' page structures are not public APIs. They are generated markup
+ * that can change without notice, and their CSS class names are compiled and
+ * meaningless. So this module deliberately avoids matching class names.
+ * Instead it layers three weaker but much more durable signals:
  *
  *   1. The image address. Generated images come from OpenAI's own file hosts,
  *      while avatars and interface icons come from static asset hosts.
@@ -22,86 +24,55 @@
  * Any one signal failing still leaves the others working.
  */
 
+import {
+  CLASSIFICATION,
+  DEFAULT_MIN_EDGE_PX,
+} from '../platforms/base.js';
+
+export { CLASSIFICATION };
+
 /**
- * Candidate containers for the conversation, most specific first.
- * `data-message-author-role` and `data-testid` are semantic attributes rather
- * than styling, so they are the most likely to survive a redesign.
+ * The adapter in force for this page. Set once at start-up by the content
+ * script; everything below reads its rules rather than hard-coding any one
+ * site's structure.
  */
-export const CONVERSATION_CONTAINER_SELECTORS = [
-  '[data-message-author-role]',
-  '[data-testid^="conversation-turn"]',
-  '[role="log"]',
-  'main',
-];
+let activeAdapter = null;
 
-/** Elements an image must NOT be inside to count as conversation content. */
-export const INTERFACE_ANCESTOR_SELECTORS = [
-  'button',
-  '[role="button"]',
-  'nav',
-  'header',
-  'aside',
-  '[role="navigation"]',
-  '[role="menu"]',
-  '[role="dialog"] nav',
-];
+export function setAdapter(adapter) {
+  activeAdapter = adapter;
+}
 
-/** Address fragments that mean "this is interface furniture, not content". */
-export const EXCLUDED_URL_FRAGMENTS = [
-  'oaistatic.com',
-  'cdn.openai.com',
-  'gravatar.com',
-  'googleusercontent.com/a/', // Google account profile pictures
-  '/avatar',
-  'avatar.',
-  '/favicon',
-  'favicon.',
-  '/logo',
-  'logo.',
-  '/icon',
-  'icon.',
-  'sprite',
-  'placeholder',
-];
+export function getAdapter() {
+  return activeAdapter;
+}
 
-/** Address fragments that positively indicate user or generated content. */
-export const CONTENT_URL_FRAGMENTS = [
-  'oaiusercontent.com',
-  '/backend-api/estuary/content',
-  '/backend-api/files/',
-  '/backend-api/content',
-];
+/** Minimum rendered edge, in CSS pixels, for an image to count as content. */
+export const MIN_CONTENT_EDGE_PX = DEFAULT_MIN_EDGE_PX;
 
-/** Minimum rendered edge, in CSS pixels, for an image to be treated as content. */
-export const MIN_CONTENT_EDGE_PX = 96;
-
-/** Attribute used to mark images we have already handled. */
 export const HANDLED_ATTRIBUTE = 'data-crediclean-handled';
 
-export const CLASSIFICATION = {
-  CONTENT: 'content',
-  INTERFACE: 'interface',
-  UNKNOWN: 'unknown',
-};
-
 /**
- * Judge an image address on its own. Pure, so it is directly unit-testable.
+ * Judge an image address on its own, using the given platform's rules.
+ *
+ * Pure, so it is directly unit-testable for every platform without a browser.
  *
  * @param {string} url
+ * @param {object} [adapter] defaults to the page's adapter
  * @returns {string} one of CLASSIFICATION.*
  */
-export function classifyImageUrl(url) {
+export function classifyImageUrl(url, adapter = activeAdapter) {
   if (!url || typeof url !== 'string') return CLASSIFICATION.INTERFACE;
+  if (!adapter) return CLASSIFICATION.INTERFACE;
 
   // Inline data URLs are icons and spinners in practice. A real generated image
   // is far too big to be inlined into the markup.
   if (url.startsWith('data:')) return CLASSIFICATION.INTERFACE;
 
   const lower = url.toLowerCase();
-  for (const fragment of EXCLUDED_URL_FRAGMENTS) {
+  for (const fragment of adapter.excludedUrlFragments) {
     if (lower.includes(fragment)) return CLASSIFICATION.INTERFACE;
   }
-  for (const fragment of CONTENT_URL_FRAGMENTS) {
+  for (const fragment of adapter.contentUrlFragments) {
     if (lower.includes(fragment)) return CLASSIFICATION.CONTENT;
   }
   // A blob: URL is content the page built in memory, which is how some images
@@ -129,19 +100,20 @@ export function isImageLoaded(img) {
  * @param {HTMLImageElement|object} img
  * @returns {{eligible: boolean, reason: string, url: string|null}}
  */
-export function evaluateImage(img) {
+export function evaluateImage(img, adapter = activeAdapter) {
   if (!img) return { eligible: false, reason: 'no-element', url: null };
+  if (!adapter) return { eligible: false, reason: 'no-adapter', url: null };
 
   const url = img.currentSrc || img.src || (img.getAttribute && img.getAttribute('src')) || null;
   if (!url) return { eligible: false, reason: 'no-source', url: null };
 
-  const classification = classifyImageUrl(url);
+  const classification = classifyImageUrl(url, adapter);
   if (classification === CLASSIFICATION.INTERFACE) {
     return { eligible: false, reason: 'interface-image', url };
   }
 
   if (img.closest) {
-    for (const selector of INTERFACE_ANCESTOR_SELECTORS) {
+    for (const selector of adapter.interfaceAncestors) {
       if (img.closest(selector)) return { eligible: false, reason: 'inside-interface', url };
     }
   }
@@ -152,16 +124,23 @@ export function evaluateImage(img) {
   // large image that is currently displayed small still qualifies.
   const width = img.naturalWidth || img.clientWidth || 0;
   const height = img.naturalHeight || img.clientHeight || 0;
-  if (width < MIN_CONTENT_EDGE_PX || height < MIN_CONTENT_EDGE_PX) {
+  if (width < adapter.minEdgePx || height < adapter.minEdgePx) {
     return { eligible: false, reason: 'too-small', url };
   }
 
-  // An unknown host is accepted only if it is inside a recognised message
-  // element, which keeps third-party images in page furniture out.
+  // An unknown host is accepted only if it is inside a recognised reply
+  // element. On sites where the generated-image host is not confirmed, this
+  // structural check is what carries the decision, so it matters most there.
   if (classification === CLASSIFICATION.UNKNOWN) {
-    const inMessage =
-      img.closest && CONVERSATION_CONTAINER_SELECTORS.some((selector) => img.closest(selector));
-    if (!inMessage) return { eligible: false, reason: 'unknown-host-outside-message', url };
+    const inReply =
+      img.closest && adapter.conversationSelectors.some((selector) => {
+        try {
+          return img.closest(selector);
+        } catch {
+          return false; // a selector this browser cannot parse must not throw
+        }
+      });
+    if (!inReply) return { eligible: false, reason: 'unknown-host-outside-message', url };
   }
 
   return { eligible: true, reason: classification, url };
@@ -173,8 +152,9 @@ export function evaluateImage(img) {
  * @param {ParentNode} [root]
  * @returns {Array<{img: HTMLImageElement, url: string}>}
  */
-export function findContentImages(root = document) {
+export function findContentImages(root = document, adapter = activeAdapter) {
   const found = [];
+  if (!adapter) return found;
   let images;
   try {
     images = root.querySelectorAll('img');
@@ -182,7 +162,7 @@ export function findContentImages(root = document) {
     return found;
   }
   for (const img of images) {
-    const verdict = evaluateImage(img);
+    const verdict = evaluateImage(img, adapter);
     if (verdict.eligible) found.push({ img, url: verdict.url });
   }
   return found;

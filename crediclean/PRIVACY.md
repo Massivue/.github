@@ -1,6 +1,6 @@
 # CrediClean privacy notice
 
-Last updated: 4 October 2026. Applies to version 0.1.0.
+Last updated: 5 October 2026. Applies to version 0.2.0.
 
 ## The short version
 
@@ -25,7 +25,8 @@ computer at any point.
 ## Network requests
 
 CrediClean makes exactly one kind of network request: downloading an image you
-clicked on, from `chatgpt.com`, `chat.openai.com` or `*.oaiusercontent.com`.
+clicked on, from the site you are already looking at or its image server. The
+full list is in the permissions table below, and nowhere else is contacted.
 
 It makes no other requests. It contacts no third party. It loads no remote code,
 no fonts, no trackers and no analytics.
@@ -47,8 +48,18 @@ Uninstalling the extension removes them.
 | Permission | Why |
 |---|---|
 | `storage` | To remember the three settings above. |
-| `https://chatgpt.com/*`, `https://chat.openai.com/*` | To show buttons on images in your conversation, and to read the image file. |
-| `https://*.oaiusercontent.com/*` | ChatGPT serves image files from this domain, so the extension needs to read from it to get the file you clicked on. |
+| `chatgpt.com`, `chat.openai.com` | ChatGPT pages |
+| `gemini.google.com` | Gemini pages |
+| `copilot.microsoft.com`, `designer.microsoft.com` | Copilot pages |
+| `grok.com`, `x.com` | Grok pages |
+| `*.oaiusercontent.com` | Where ChatGPT serves image files |
+| `*.googleusercontent.com`, `usercontent.google.com` | Where Gemini is expected to serve image files |
+| `th.bing.com`, `*.bing.net` | Where Copilot is expected to serve image files |
+| `assets.grok.com`, `pbs.twimg.com` | Where Grok is expected to serve image files |
+
+The extension asks for these specific hosts rather than whole domains. It does
+not request `<all_urls>`, nor all of `google.com`, `microsoft.com` or
+`bing.com`.
 
 CrediClean does **not** request access to your browsing history, your cookies,
 your passwords, other websites, or your tabs in general.

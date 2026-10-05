@@ -171,6 +171,34 @@ notes.push(`host permissions: ${(manifest.host_permissions || []).join(', ')}`);
 notes.push(`permissions: ${(manifest.permissions || []).join(', ') || '(none)'}`);
 notes.push(`modules reachable from the content script: ${seen.size}`);
 
+/* 5. The manifest must still agree with the platform registry, which is the
+      single source of truth for which sites are supported. */
+const registry = await import('../src/platforms/index.js');
+const pageHosts = registry.allPageHosts();
+const imageHosts = registry.allImageHosts();
+
+const matches = (manifest.content_scripts || []).flatMap((script) => script.matches || []);
+for (const host of pageHosts) {
+  const pattern = `https://${host}/*`;
+  if (!matches.includes(pattern)) {
+    problems.push(`platform registry lists ${host} but no content script matches ${pattern}`);
+  }
+}
+const hostPermissions = manifest.host_permissions || [];
+for (const host of imageHosts) {
+  const covered = hostPermissions.some(
+    (pattern) => pattern === `https://${host}/*` || pattern === `https://*.${host}/*`,
+  );
+  if (!covered) problems.push(`platform registry allows fetching from ${host} but host_permissions does not`);
+}
+for (const pattern of hostPermissions) {
+  const host = pattern.replace(/^https:\/\//, '').replace(/^\*\./, '').replace(/\/\*$/, '');
+  if (!pageHosts.includes(host) && !imageHosts.includes(host)) {
+    warnings.push(`host_permissions includes ${pattern}, which no platform adapter asks for`);
+  }
+}
+notes.push(`platforms: ${registry.ADAPTERS.map((a) => a.id).join(', ')}`);
+
 /* Report. */
 for (const note of notes) console.log(`  info    ${note}`);
 for (const warning of warnings) console.log(`  warning ${warning}`);

@@ -120,3 +120,25 @@ test('a very long source filename is capped so it cannot break the panel', () =>
   assert.ok(name.length <= 84, `name was ${name.length} characters`);
   assert.ok(name.endsWith('.png'));
 });
+
+/* Full-size resolution: the displayed image is often a resized variant. */
+
+test('Grok upgrades an X media address to the full-size original', async () => {
+  const { grokAdapter } = await import('../src/platforms/grok.js');
+  assert.equal(
+    grokAdapter.resolveSourceUrl('https://pbs.twimg.com/media/ABC.jpg?format=jpg&name=small'),
+    'https://pbs.twimg.com/media/ABC.jpg?format=jpg&name=orig',
+  );
+});
+
+test('Grok leaves addresses without a size parameter alone', async () => {
+  const { grokAdapter } = await import('../src/platforms/grok.js');
+  const url = 'https://assets.grok.com/users/x/generated/abc.jpg';
+  assert.equal(grokAdapter.resolveSourceUrl(url), url);
+  assert.equal(grokAdapter.resolveSourceUrl('https://pbs.twimg.com/media/ABC.jpg'), 'https://pbs.twimg.com/media/ABC.jpg');
+});
+
+test('Grok survives a malformed address without throwing', async () => {
+  const { grokAdapter } = await import('../src/platforms/grok.js');
+  assert.equal(grokAdapter.resolveSourceUrl('not a url'), 'not a url');
+});

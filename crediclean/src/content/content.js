@@ -29,6 +29,7 @@
       import(moduleUrl('processing/credential-processor.js')),
       import(moduleUrl('processing/download-manager.js')),
       import(moduleUrl('shared/settings.js')),
+      import(moduleUrl('platforms/index.js')),
     ]);
   } catch (error) {
     // Without the modules there is nothing we can do, but we must not break the
@@ -46,7 +47,20 @@
     processorModule,
     downloadManager,
     settingsModule,
+    platforms,
   ] = modules;
+
+  /*
+   * Which site are we on? Everything site-specific lives in that platform's
+   * adapter; the rest of the extension is shared. If no adapter claims this
+   * host we do nothing at all rather than guess at the page structure.
+   */
+  const adapter = platforms.currentAdapter();
+  if (!adapter) {
+    console.warn('[CrediClean] No platform adapter for this site; staying inactive.');
+    return;
+  }
+  detector.setAdapter(adapter);
 
   const { OUTCOME } = processorModule;
 
@@ -62,7 +76,7 @@
   async function handleInspect(entry, badgeUi) {
     badgeUi.setBusy(true, 'Reading\u2026');
 
-    const url = imageLoader.bestSourceUrl(entry.img);
+    const url = imageLoader.bestSourceUrl(entry.img, adapter);
     const loaded = await imageLoader.loadImageBytes(url);
 
     // The user may have scrolled the image away or switched conversation while

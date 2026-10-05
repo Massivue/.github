@@ -12,13 +12,16 @@
 
 import { MESSAGE, ERROR_CODE, bytesToBase64 } from '../shared/messages.js';
 import { SIZE_LIMITS, FETCH_TIMEOUT_MS, STORAGE_KEY, DEFAULT_SETTINGS } from '../shared/constants.js';
+import { allImageHosts } from '../platforms/index.js';
 
-/** Hosts we are willing to fetch from. Must stay in step with host_permissions. */
-const ALLOWED_HOST_SUFFIXES = [
-  'chatgpt.com',
-  'chat.openai.com',
-  'oaiusercontent.com',
-];
+/**
+ * Hosts we are willing to fetch an original image from.
+ *
+ * Derived from the platform registry rather than written out again here, so
+ * the worker, the manifest and the content script cannot drift apart.
+ * `npm run verify` fails if the manifest stops agreeing with it.
+ */
+const ALLOWED_HOST_SUFFIXES = allImageHosts();
 
 function isAllowedUrl(rawUrl) {
   let url;
@@ -35,6 +38,24 @@ function isAllowedUrl(rawUrl) {
 
 async function fetchImageBytes(rawUrl) {
   if (!isAllowedUrl(rawUrl)) {
+    /*
+     * The image-hosting domains for Gemini, Copilot and Grok are not
+     * documented publicly, so some of the entries in the registry are
+     * inferences. When one of them is wrong this is where it shows up, so log
+     * the host that was actually refused: that is the single piece of
+     * information needed to correct the adapter.
+     */
+    let host = '(unparseable)';
+    try {
+      host = new URL(rawUrl).hostname;
+    } catch {
+      /* keep the placeholder */
+    }
+    console.warn(
+      `[CrediClean] Refused to fetch from "${host}". If this is where a supported ` +
+        'platform serves its generated images, add it to that platform\'s ' +
+        'imageHosts in src/platforms/.',
+    );
     return { ok: false, code: ERROR_CODE.BAD_URL, error: 'That image address is not one this extension may read.' };
   }
 
