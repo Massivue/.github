@@ -261,3 +261,64 @@ noise.
 - Signature validation. `c2pa-js` could do it but would roughly double the
   extension's size for a feature nobody asked for. The product therefore never
   claims a credential is valid, only that one is present.
+
+## Milestone 9: Gemini, second and third attempts
+
+**5 October 2026.** Two wrong answers before the right one, both ruled out by
+evidence from the live site rather than by reasoning.
+
+### Attempt 1: rewrite the address. Wrong.
+
+The theory was that Google's resizing CDN served a re-encoded derivative, so
+the adapter asked for `=s0`, the original. The diagnosis from a real image
+showed `Addresses tried: Array(1)` and an address of
+`blob:https://gemini.google.com/...`. There was no CDN address to rewrite. The
+fix never ran.
+
+### Attempt 2: find the original in the markup. Wrong.
+
+If the `<img>` only has a blob, the original's address might be nearby, behind
+a download link. A DOM dump on the live page returned `"links": []` and
+`"attrs": []`. Gemini keeps no address for the original anywhere in the page.
+
+### What the evidence actually said
+
+The blob held a JPEG whose only segments were a JFIF header, one quantisation
+segment, a frame header and four Huffman tables. No EXIF, no XMP, no APP11.
+The single 130-byte quantisation segment is the giveaway: a canvas encode emits
+one combined segment where a tool like ImageMagick emits two.
+
+So the page downloads the picture, draws it to a canvas, and displays the
+canvas output. The credentials are destroyed inside the page, before the
+extension exists as far as that image is concerned.
+
+### Attempt 3: watch what the page downloads
+
+The page has to fetch the picture before it can re-encode it. A script in the
+page's own JavaScript world now records the addresses of image responses, and
+the extension asks for that list when inspecting a blob-backed image.
+
+Patching a host page's `fetch` and `XMLHttpRequest` is the most intrusive thing
+this extension does, so it is bounded hard: injected only on Gemini, never
+blocks or rewrites anything, never reads a response body, records addresses
+only, and every wrapper falls through to the original on any error. ChatGPT
+does not get it at all.
+
+Recovered addresses are checked against the image on screen before use, same
+aspect ratio and at least as many pixels, because processing the wrong picture
+would be worse than failing.
+
+### The test reproduces it rather than describing it
+
+The mock Gemini page downloads the signed file, draws it to a canvas and shows
+the result from a blob, with no link or attribute anywhere holding the
+original's address. The test asserts the displayed bytes really have no EXIF
+or APP11 segment, so finding credentials cannot be coming from the blob. A
+wrong-shaped decoy is downloaded too, and must be refused.
+
+### Still unknown
+
+Whether the file Gemini downloads carries C2PA at all. If Google hands the
+browser an already-stripped image then nothing with credentials ever reaches
+it, and "no supported credentials found" is the correct answer rather than a
+bug. One file downloaded with Gemini's own button would settle it.

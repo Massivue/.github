@@ -59,8 +59,6 @@ const signed = buildPng({
 const unsigned = buildPng({ width: 1024, height: 768 });
 /* What a resizing CDN returns: same picture, smaller, credentials gone. */
 const strippedDerivative = buildPng({ width: 526, height: 296 });
-/* What the page shows: same size as the original, but re-encoded and bare. */
-const strippedDisplay = buildPng({ width: 1024, height: 768 });
 /* A different image entirely, to prove a wrong candidate is refused. */
 const decoy = buildPng({ width: 300, height: 900, c2pa: buildC2paManifestStore() });
 const avatar = buildPng({ width: 32, height: 32 });
@@ -92,12 +90,6 @@ function startServer() {
         if (url.pathname.startsWith('/a/')) {
           response.writeHead(200, { 'content-type': 'image/png' });
           response.end(Buffer.from(avatar));
-          return;
-        }
-        // What the page shows: a re-encoded copy with no credentials left.
-        if (url.pathname === '/stripped') {
-          response.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': strippedDisplay.length });
-          response.end(Buffer.from(strippedDisplay));
           return;
         }
         // A differently shaped image the extension must refuse to process.
@@ -189,7 +181,25 @@ async function testPlatform(context, adapter) {
       );
       check('gemini: the page really is showing a blob, as the live site does', blobShown === true);
 
-      check('gemini: finds credentials DESPITE the page showing a re-encoded blob',
+      // Confirm the reproduction is faithful: the displayed bytes really have
+      // been stripped, so finding credentials cannot come from the blob.
+      const displayedIsBare = await page.evaluate(async () => {
+        const img = document.getElementById('generated');
+        const bytes = new Uint8Array(await (await fetch(img.src)).arrayBuffer());
+        let i = 2;
+        const markers = [];
+        while (i < bytes.length - 1 && bytes[i] === 0xff) {
+          const m = bytes[i + 1];
+          if (m === 0xda) break;
+          markers.push(m);
+          i += 2 + ((bytes[i + 2] << 8) | bytes[i + 3]);
+        }
+        // 0xE1 is EXIF/XMP, 0xEB is APP11 where C2PA lives.
+        return !markers.includes(0xe1) && !markers.includes(0xeb);
+      });
+      check('gemini: the displayed blob really has had its metadata destroyed', displayedIsBare === true);
+
+      check('gemini: finds credentials by observing what the page downloaded',
         /Content Credentials found/i.test(panelText), panelText.slice(0, 160));
       check('gemini: reports the ORIGINAL dimensions, not the decoy\'s or the derivative\'s',
         /1024\s*[x\u00d7]\s*768/.test(panelText) && !/300|526/.test(panelText), panelText.slice(0, 160));

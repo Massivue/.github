@@ -177,6 +177,19 @@ export const geminiAdapter = defineAdapter({
     return upgraded;
   },
 
+  /**
+   * Watch what the page downloads.
+   *
+   * Gemini shows its generated images from blob: addresses and keeps no
+   * address for the original anywhere in the markup, so neither rewriting the
+   * address nor searching the DOM can reach the real file. Observing the
+   * page's own image downloads is the only remaining route to it.
+   *
+   * Deliberately opt-in per platform. ChatGPT does not set this, and must not:
+   * it works already, and the observer is the most intrusive code here.
+   */
+  observeNetworkSources: true,
+
   support: {
     imageDetection: SUPPORT.UNVERIFIED,
     // Documented by Google, but we have not inspected a real Gemini file.

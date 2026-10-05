@@ -96,16 +96,39 @@ the time CrediClean sees anything, the credentials have already been destroyed
 inside the page. This cannot be fixed by changing the address, because there is
 no address: the bytes were manufactured in memory.
 
-**Fix:** the adapter now looks for the original file elsewhere in the markup,
-preferring a download link, and only falls back to the blob. Anything it finds
-is checked against the image on screen (same aspect ratio, at least as many
-pixels) before being used, so a wrong address cannot cause the wrong picture to
-be processed.
+**First attempt, which failed:** search the markup for the original's address.
+Running a DOM dump on the live page returned empty lists for both links and
+attributes. Gemini keeps no address for the original anywhere in the page, so
+there is nothing to find. The code remains as a cheap fallback for sites that
+do expose one, but it cannot help here.
 
-**Unverified:** this heuristic has not been tested against Gemini's real
-markup. If the original is not reachable from the page at all, no extension can
-retrieve it and the honest answer stays "no supported credentials found".
-`docs/TROUBLESHOOTING.md` has a snippet that settles it.
+**Second attempt, current:** watch what the page downloads.
+
+The page must fetch the picture from somewhere before re-encoding it. A small
+script running in the page's own JavaScript world records the addresses of
+image responses as they happen, and the extension asks it for that list when
+the user inspects a blob-backed image.
+
+This is the most intrusive code in the extension, so it is tightly bounded:
+
+- injected **only on Gemini**, because only Gemini needs it. ChatGPT does not
+  get it, deliberately: that platform works and nothing should risk it;
+- it never blocks, delays, rewrites or retries a request;
+- it never reads a response body, so no stream the page depends on is consumed;
+- it records addresses and content types only, never image data;
+- every wrapper calls through to the original and is wrapped in try/catch, so a
+  failure inside it falls straight through to normal behaviour.
+
+Anything recovered this way is checked against the image on screen, same aspect
+ratio within 2 percent and at least as many pixels, before it is used. Handing
+back somebody else's picture would be far worse than failing.
+
+**The remaining unknown, and it is a real one:** whether the file Gemini
+downloads carries C2PA at all. If Google's servers hand the browser an
+already-stripped image, then nothing reaches the browser that has credentials
+in it, no extension can recover them, and "no supported credentials found" is
+simply the correct answer. The way to settle this is to download an image using
+Gemini's own download button and inspect the bytes.
 
 ### The resized-derivative problem, and the fix
 

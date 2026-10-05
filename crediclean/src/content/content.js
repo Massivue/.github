@@ -30,6 +30,7 @@
       import(moduleUrl('processing/download-manager.js')),
       import(moduleUrl('shared/settings.js')),
       import(moduleUrl('platforms/index.js')),
+      import(moduleUrl('content/observed-sources.js')),
     ]);
   } catch (error) {
     // Without the modules there is nothing we can do, but we must not break the
@@ -48,6 +49,7 @@
     downloadManager,
     settingsModule,
     platforms,
+    observedSources,
   ] = modules;
 
   /*
@@ -78,7 +80,22 @@
 
     // Some sites show a resized derivative of the real file. Ask the adapter
     // for better addresses first; the page's own address stays as a fallback.
-    const candidates = imageLoader.sourceUrlCandidates(entry.img, adapter);
+    let candidates = imageLoader.sourceUrlCandidates(entry.img, adapter);
+
+    /*
+     * When the image is a blob the page built, the bytes behind it may have
+     * been re-encoded and stripped of everything. Ask the page-world observer
+     * what this page actually downloaded, and try those real addresses first.
+     * The acceptance check below is what stops us picking the wrong one.
+     */
+    if (adapter.observeNetworkSources && String(candidates[0] || '').startsWith('blob:')) {
+      const observed = await observedSources.observedImageUrls();
+      if (observed.length > 0) {
+        // Newest first: the image just asked about is the likeliest match.
+        const extra = [...observed].reverse().filter((url) => !candidates.includes(url));
+        candidates = [...extra, ...candidates];
+      }
+    }
 
     /*
      * Guard against processing the wrong picture.

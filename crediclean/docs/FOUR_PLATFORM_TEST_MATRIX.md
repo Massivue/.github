@@ -65,7 +65,7 @@ The full regression suite, re-run after the platform refactor. Covers
 detection, the panel, one-click removal, download, positioning, both themes
 and the service worker.
 
-### 4. Four-platform browser suite — 61 PASS, 0 fail
+### 4. Four-platform browser suite — 63 PASS, 0 fail
 
 The real extension in a real Chromium, against a reconstructed page per
 platform served from that platform's real hostname.
@@ -101,7 +101,8 @@ the extension says so plainly and invents nothing.
 | Inspect a real Grok file's bytes | **BLOCKED** | Follows from the above |
 | Confirm Gemini's image CDN host | **CONFIRMED** | The product owner's live test reached it |
 | Confirm Copilot/Grok image CDN hosts | **NOT CONFIRMED** | No vendor documents them |
-| Confirm a Gemini `=s0` original carries C2PA | **NOT CONFIRMED** | Needs one real file |
+| Confirm a Gemini download carries C2PA at all | **NOT CONFIRMED** | The decisive open question. Needs one real file |
+| Gemini original reachable from the DOM | **NOT SUPPORTED** | Confirmed absent: a live DOM dump returned no links and no attributes |
 | Read Google's and Microsoft's own pages | **BLOCKED** | The network here blocks those domains |
 | WebP chunk identifier | **PASS** | Confirmed against the C2PA reference implementation's source |
 | WebP removal against a real signed file | **BLOCKED** | No C2PA-signed WebP sample exists publicly |
