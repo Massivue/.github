@@ -1,13 +1,14 @@
 /**
- * Popup logic: show whether the extension is active, and edit the settings.
+ * Popup: say whether CrediClean is active here, offer the supported sites, and
+ * edit the three settings.
  *
- * Deliberately small. The popup does no image work and reads nothing from the
- * page beyond the current tab's address, which it uses only to tell the user
- * whether they are on ChatGPT.
+ * The list of sites is built from the platform registry rather than written
+ * out here, so adding or removing a platform updates this automatically and
+ * the popup can never claim support that does not exist.
  */
 
 import { loadSettings, saveSettings } from '../shared/settings.js';
-import { CHATGPT_HOSTS } from '../shared/constants.js';
+import { ADAPTERS, adapterForHost } from '../platforms/index.js';
 
 const fields = {
   enabled: document.getElementById('setting-enabled'),
@@ -18,6 +19,7 @@ const fields = {
 const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
 const savedNote = document.getElementById('saved-note');
+const sites = document.getElementById('sites');
 
 let savedTimer = null;
 function flashSaved() {
@@ -28,55 +30,62 @@ function flashSaved() {
   }, 1400);
 }
 
-function isChatGptUrl(url) {
-  if (!url) return false;
+/** Which supported platform is the active tab on, if any? */
+async function currentPlatform() {
   try {
-    const { hostname, protocol } = new URL(url);
-    if (protocol !== 'https:') return false;
-    return CHATGPT_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`));
+    /*
+     * Deliberately NOT requesting the "tabs" permission. tabs.query works
+     * without it; `tab.url` is simply only filled in for addresses matching
+     * our host permissions, which is exactly the set we care about. Every
+     * other site reads as undefined, which is the right answer here.
+     */
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.url) return null;
+    const { hostname, protocol } = new URL(tab.url);
+    if (protocol !== 'https:') return null;
+    return adapterForHost(hostname);
   } catch {
-    return false;
+    return null;
   }
 }
 
-async function describeStatus(settings) {
+function describeStatus(settings, platform) {
   if (!settings.enabled) {
     statusDot.classList.remove('status__dot--on');
     statusText.textContent = 'Turned off';
     return;
   }
-
-  let onChatGpt = false;
-  try {
-    /*
-     * Deliberately NOT requesting the "tabs" permission.
-     *
-     * `tabs.query` works without it. The catch is that `tab.url` is only filled
-     * in for tabs whose address matches one of our host_permissions. That is
-     * exactly what we want: we get the address for ChatGPT tabs, and
-     * `undefined` for every other site, which `isChatGptUrl` correctly reads as
-     * "not ChatGPT". Adding "tabs" would let us read the address of every tab
-     * the user has open, for no gain, and would show a scarier install warning.
-     */
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    onChatGpt = isChatGptUrl(tab && tab.url);
-  } catch {
-    onChatGpt = false;
-  }
-
-  if (onChatGpt) {
+  if (platform) {
     statusDot.classList.add('status__dot--on');
     statusText.textContent = settings.showImageButtons
-      ? 'Active on this page'
-      : 'Active, image buttons hidden';
-  } else {
-    statusDot.classList.remove('status__dot--on');
-    statusText.textContent = 'Ready. Open ChatGPT to use it.';
+      ? `Active on ${platform.name}`
+      : `Active on ${platform.name}, buttons hidden`;
+    return;
+  }
+  statusDot.classList.remove('status__dot--on');
+  statusText.textContent = 'Open one of the sites below';
+}
+
+/** One button per supported site, with the current one highlighted. */
+function renderSites(platform) {
+  sites.replaceChildren();
+  for (const adapter of ADAPTERS) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = adapter.id === platform?.id ? 'site site--here' : 'site';
+    button.textContent = adapter.name;
+    button.title = `Open ${adapter.name}`;
+    button.addEventListener('click', async () => {
+      await chrome.tabs.create({ url: `https://${adapter.hosts[0]}/` });
+      window.close();
+    });
+    sites.append(button);
   }
 }
 
 async function init() {
   const settings = await loadSettings();
+  const platform = await currentPlatform();
 
   for (const [key, input] of Object.entries(fields)) {
     if (!input) continue;
@@ -84,19 +93,13 @@ async function init() {
     input.addEventListener('change', async () => {
       const next = await saveSettings({ [key]: input.checked });
       flashSaved();
-      await describeStatus(next);
+      describeStatus(next, platform);
     });
   }
 
-  await describeStatus(settings);
-
-  document.getElementById('open-chatgpt').addEventListener('click', async () => {
-    await chrome.tabs.create({ url: 'https://chatgpt.com/' });
-    window.close();
-  });
-
-  const version = chrome.runtime.getManifest().version;
-  document.getElementById('version').textContent = `v${version}`;
+  describeStatus(settings, platform);
+  renderSites(platform);
+  document.getElementById('version').textContent = `v${chrome.runtime.getManifest().version}`;
 }
 
 init().catch((error) => {

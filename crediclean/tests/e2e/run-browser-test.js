@@ -456,10 +456,38 @@ async function main() {
 
       const statusText = await popup.locator('#status-text').innerText();
       check('popup opens and shows a status', statusText.length > 0 && statusText !== 'Checking…', statusText);
-      check('popup shows the privacy statement',
-        /does not upload your images/i.test(await popup.locator('body').innerText()));
+      const popupText = await popup.locator('body').innerText();
+
+      check('popup states that nothing is uploaded',
+        /nothing is uploaded/i.test(popupText), popupText.slice(0, 160));
+      check('popup keeps the watermark caveat',
+        /watermark/i.test(popupText), popupText.slice(0, 160));
       check('popup no longer offers the removed confirmation setting',
         (await popup.locator('#setting-confirm').count()) === 0);
+
+      /*
+       * The popup used to describe the extension as ChatGPT-only, which became
+       * wrong the moment other platforms were added. It now builds its list
+       * from the platform registry, so these checks make sure it keeps doing
+       * so rather than drifting back to hard-coded wording.
+       */
+      const { ADAPTERS } = await import('../../src/platforms/index.js');
+      const listed = await popup.locator('.site').allInnerTexts();
+      check('popup lists every supported platform',
+        ADAPTERS.every((adapter) => listed.includes(adapter.name)),
+        `listed: ${listed.join(', ')}`);
+      check('popup does not call itself ChatGPT-only',
+        !/for ChatGPT images|Open ChatGPT to use it/i.test(popupText), popupText.slice(0, 160));
+      check('popup does not name a single provider in its disclaimer',
+        !/affiliated with OpenAI/i.test(popupText));
+
+      const popupBox = await popup.evaluate(() => ({
+        content: document.body.scrollHeight,
+        width: document.body.scrollWidth,
+      }));
+      check('popup is compact enough not to scroll',
+        popupBox.content <= 560, `content height ${popupBox.content}`);
+      check('popup is a sensible width', popupBox.width <= 320, `width ${popupBox.width}`);
       await popup.close();
     } else {
       check('popup could be opened', false, 'could not determine the extension id');
