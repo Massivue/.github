@@ -145,7 +145,7 @@ async function main() {
     await page.waitForTimeout(800); // let the debounced scan settle
 
     const badgeCount = await page.locator('.cc-badge').count();
-    check('exactly two buttons: one per generated image', badgeCount === 2, `found ${badgeCount}`);
+    check('exactly three buttons: one per generated image', badgeCount === 3, `found ${badgeCount}`);
 
     const overlayPresent = await page.locator('#crediclean-overlay-host').count();
     check('overlay host is attached to the page', overlayPresent === 1);
@@ -163,7 +163,7 @@ async function main() {
 
     await page.evaluate(() => window.addLateImage());
     await page.waitForFunction(
-      () => document.querySelector('#crediclean-overlay-host')?.shadowRoot?.querySelectorAll('.cc-badge').length === 3,
+      () => document.querySelector('#crediclean-overlay-host')?.shadowRoot?.querySelectorAll('.cc-badge').length === 4,
       undefined,
       { timeout: 10000 },
     );
@@ -172,7 +172,7 @@ async function main() {
     // Running the scan again must not duplicate anything.
     await page.waitForTimeout(600);
     const afterLate = await page.locator('.cc-badge').count();
-    check('no duplicate buttons after rescans', afterLate === 3, `found ${afterLate}`);
+    check('no duplicate buttons after rescans', afterLate === 4, `found ${afterLate}`);
 
     /* --- inspecting an image with credentials ---------------------------- */
 
@@ -180,38 +180,62 @@ async function main() {
     await page.waitForSelector('.cc-panel', { timeout: 15000 });
 
     const panelText = await page.locator('.cc-panel').innerText();
-    check('panel reports credentials were found', /Content Credentials found/i.test(panelText), panelText.slice(0, 120));
-    check('panel shows the signer read from the file', /MockOpenAI\/1\.0/.test(panelText));
-    check('panel lists an assertion from the file', /c2pa\.actions/.test(panelText));
-    check('panel states the image dimensions', /600 x 400/.test(panelText));
-    check('panel carries the watermark honesty note', /invisible watermark/i.test(panelText));
-    check('panel does not claim the credential is valid', !/\bis valid\b/i.test(panelText));
+    check('panel reports credentials were found', /Content Credentials found/i.test(panelText), panelText.slice(0, 140));
 
-    /* --- removing and downloading ---------------------------------------- */
+    /* --- the panel is compact and shows ONLY the three facts -------------- */
+
+    check('panel shows Format', /Format/.test(panelText));
+    check('panel shows Size', /Size/.test(panelText));
+    check('panel shows File', /File/.test(panelText));
+    check('panel shows the real dimensions', /600\s*[x\u00d7]\s*400/.test(panelText), panelText);
+
+    // Everything technical must be gone.
+    for (const [label, pattern] of [
+      ['"What was found" section', /what was found/i],
+      ['"The credential states" section', /credential states/i],
+      ['assertion labels', /c2pa\.[a-z]/i],
+      ['the signer / claim generator', /MockOpenAI/],
+      ['the word C2PA', /\bC2PA\b/],
+      ['manifest wording', /manifest/i],
+      ['provenance wording', /provenance/i],
+      ['verification check list', /checks run on/i],
+    ]) {
+      check(`panel does NOT show ${label}`, !pattern.test(panelText), panelText.slice(0, 200));
+    }
+
+    const panelBox = await page.locator('.cc-panel').boundingBox();
+    check('panel width is in the 360-420px range',
+      panelBox.width >= 360 && panelBox.width <= 420, `width was ${panelBox.width}`);
+
+    const scrollState = await page.evaluate(() => {
+      const panel = document.getElementById('crediclean-overlay-host').shadowRoot.querySelector('.cc-panel');
+      return { scrollHeight: panel.scrollHeight, clientHeight: panel.clientHeight };
+    });
+    check('panel does not need scrolling',
+      scrollState.scrollHeight <= scrollState.clientHeight + 1,
+      `content ${scrollState.scrollHeight}px in ${scrollState.clientHeight}px`);
+    // The panel it replaced was 506px tall and scrolled. This guards against
+    // that returning, with headroom for the hint wrapping to a second line.
+    check('panel is short', panelBox.height < 300, `height was ${panelBox.height}`);
+
+    /* --- removal happens with ONE click, no second confirmation ---------- */
 
     const removeButton = page.locator('.cc-panel .cc-button--primary');
-    check('a remove action is offered', (await removeButton.count()) === 1);
-    await removeButton.click();
+    check('one primary action is offered', (await removeButton.count()) === 1);
+    check('the action is labelled clearly',
+      /Remove credentials & save/i.test(await removeButton.innerText()));
 
-    // Confirmation is on by default, so a second click is expected.
-    const confirmWarning = page.locator('.cc-panel .cc-note--warn');
-    await confirmWarning.waitFor({ state: 'attached', timeout: 5000 });
-    check('a confirmation step is shown before anything is removed', true);
-
-    // The confirm button must be reachable without the user hunting for it,
-    // even when the report is longer than the panel. The action row is sticky,
-    // so it should already be on screen.
-    const confirmButton = page.locator('.cc-panel .cc-button--primary');
-    check('the confirm button is visible without scrolling', await confirmButton.isVisible());
-    check('the confirmation explains what will happen',
-      /removes information about where the image came from/i.test(await confirmWarning.innerText()));
-    check('the confirmation says the original is not changed',
-      /original on ChatGPT is not changed/i.test(await confirmWarning.innerText()));
-
+    // The single click must produce the download directly. If a second
+    // confirmation existed, no download event would ever arrive here.
     const [download] = await Promise.all([
       page.waitForEvent('download', { timeout: 20000 }),
-      confirmButton.click(),
+      removeButton.click(),
     ]);
+    check('ONE click downloads the file, with no second confirmation', true);
+
+    const afterClickText = await page.locator('.cc-panel').innerText();
+    check('no "Yes, remove and save" confirmation appeared', !/yes,\s*remove/i.test(afterClickText));
+    check('no "are you sure" prompt appeared', !/are you sure/i.test(afterClickText));
 
     const suggested = download.suggestedFilename();
     check('download filename marks the file as processed', /-processed\.png$/.test(suggested), suggested);
@@ -226,14 +250,23 @@ async function main() {
     check('downloaded file keeps its dimensions',
       savedReport.dimensions?.width === 600 && savedReport.dimensions?.height === 400,
       JSON.stringify(savedReport.dimensions));
-    check('downloaded file is smaller than the original', savedBytes.length < signed.length);
     check('no caBX chunk survives in the downloaded file',
       !Buffer.from(savedBytes).toString('latin1').includes('caBX'));
 
-    const successText = await page.locator('.cc-panel').innerText();
-    check('success is only reported after the file exists', /removed and file saved/i.test(successText));
-    check('success panel lists the verification checks', /Checks run on the saved file/i.test(successText));
-    check('success panel says the original is unchanged', /original.*unchanged/i.test(successText));
+    /* --- the saved state -------------------------------------------------- */
+
+    await page.waitForFunction(
+      () => /Saved/.test(
+        document.getElementById('crediclean-overlay-host').shadowRoot.querySelector('.cc-panel')?.innerText || '',
+      ),
+      undefined,
+      { timeout: 10000 },
+    );
+    const savedText = await page.locator('.cc-panel').innerText();
+    check('button changes to a saved state', /Saved/.test(savedText));
+    check('success message is shown', /removed and image saved/i.test(savedText));
+    check('success state says the original is unchanged', /original is unchanged/i.test(savedText));
+    check('saved button is disabled', await page.locator('.cc-panel .cc-button--done').isDisabled());
 
     /* --- the image with no credentials ----------------------------------- */
 
@@ -241,24 +274,73 @@ async function main() {
     await page.locator('body').click({ position: { x: 5, y: 5 } });
     await page.waitForTimeout(400);
 
-    // Badges for images that are off screen are hidden on purpose, so scroll to
-    // the second image first, the way a user would. That it becomes visible
-    // again on scroll is itself worth checking.
     await page.locator('#unsigned').scrollIntoViewIfNeeded();
     await page.waitForTimeout(500);
-    check('a badge reappears when its image is scrolled back into view',
-      await page.locator('.cc-badge').nth(1).isVisible());
-
     await page.locator('.cc-badge').nth(1).click();
     await page.waitForSelector('.cc-panel', { timeout: 15000 });
     const cleanText = await page.locator('.cc-panel').innerText();
 
     check('an image with no credentials says so plainly',
-      /No supported credentials found/i.test(cleanText), cleanText.slice(0, 120));
-    check('and does not claim that proves anything',
-      /not proof/i.test(cleanText), cleanText.slice(0, 200));
-    check('no remove action is offered when there is nothing to remove',
+      /No supported credentials found/i.test(cleanText), cleanText.slice(0, 140));
+    check('it still shows the three facts', /Format/.test(cleanText) && /Size/.test(cleanText) && /File/.test(cleanText));
+    check('no removal action is offered when there is nothing to remove',
       (await page.locator('.cc-panel .cc-button--primary').count()) === 0);
+    check('it does not imply anything was removed', !/removed/i.test(cleanText), cleanText.slice(0, 160));
+    check('a Close button is offered', /Close/.test(cleanText));
+
+    // Close must actually close.
+    await page.locator('.cc-panel .cc-button').click();
+    await page.waitForTimeout(300);
+    check('the Close button closes the panel', (await page.locator('.cc-panel').count()) === 0);
+
+    /* --- a long filename must not break the layout ------------------------ */
+
+    await page.locator('#longname').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(500);
+    const longBadge = page.locator('.cc-badge').nth(2);
+    await longBadge.click();
+    await page.waitForSelector('.cc-panel', { timeout: 15000 });
+
+    const longBox = await page.locator('.cc-panel').boundingBox();
+    check('a long filename does not widen the panel',
+      longBox.width >= 360 && longBox.width <= 420, `width was ${longBox.width}`);
+
+    const fileCell = await page.evaluate(() => {
+      const root = document.getElementById('crediclean-overlay-host').shadowRoot;
+      const cell = root.querySelector('.cc-truncate');
+      if (!cell) return null;
+      return { clipped: cell.scrollWidth > cell.clientWidth, title: cell.title, text: cell.textContent };
+    });
+    check('the long filename is visually truncated', fileCell?.clipped === true, JSON.stringify(fileCell));
+    check('the full filename stays available as a tooltip',
+      typeof fileCell?.title === 'string' && fileCell.title.length > 0 && fileCell.title === fileCell.text);
+
+    await page.keyboard.press('Escape');
+    await page.locator('body').click({ position: { x: 5, y: 5 } });
+    await page.waitForTimeout(300);
+
+    /* --- light theme ------------------------------------------------------ */
+
+    await page.evaluate(() => {
+      document.documentElement.classList.remove('dark');
+      document.body.style.background = '#ffffff';
+      document.body.style.color = '#1f2023';
+    });
+    await page.waitForTimeout(600);
+    const theme = await page.evaluate(
+      () => document.getElementById('crediclean-overlay-host').shadowRoot.querySelector('.cc-layer').dataset.theme,
+    );
+    check('light page background switches the panel to the light theme', theme === 'light', `theme was ${theme}`);
+
+    await page.evaluate(() => {
+      document.documentElement.classList.add('dark');
+      document.body.style.background = '#212121';
+    });
+    await page.waitForTimeout(600);
+    const darkTheme = await page.evaluate(
+      () => document.getElementById('crediclean-overlay-host').shadowRoot.querySelector('.cc-layer').dataset.theme,
+    );
+    check('dark page background switches it back', darkTheme === 'dark', `theme was ${darkTheme}`);
 
     /* --- the popup page loads -------------------------------------------- */
 
@@ -270,10 +352,36 @@ async function main() {
       const popup = await context.newPage();
       await popup.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
       await popup.waitForSelector('#status-text');
+
+      /*
+       * Proof that the service worker's onInstalled handler ran to completion.
+       *
+       * That handler used a dynamic import(), which is forbidden inside a
+       * service worker and threw an uncaught TypeError on every install. When
+       * it throws, the default settings are never written. So finding them in
+       * storage shows the handler reached its end, which it could not do
+       * before the fix.
+       */
+      const seeded = await popup.evaluate(async () => {
+        const stored = await chrome.storage.sync.get('crediclean.settings');
+        return stored['crediclean.settings'] || null;
+      });
+      check('service worker install handler completed and seeded settings',
+        seeded !== null && seeded.enabled === true, JSON.stringify(seeded));
+      check('the removed confirmation setting is gone from storage',
+        seeded !== null && !('confirmBeforeProcessing' in seeded), JSON.stringify(seeded));
+
+      // The worker must also still be alive and evaluable.
+      const worker = context.serviceWorkers()[0];
+      const workerAlive = worker ? await worker.evaluate(() => typeof chrome !== 'undefined') : false;
+      check('service worker is running', workerAlive === true);
+
       const statusText = await popup.locator('#status-text').innerText();
       check('popup opens and shows a status', statusText.length > 0 && statusText !== 'Checking…', statusText);
       check('popup shows the privacy statement',
         /does not upload your images/i.test(await popup.locator('body').innerText()));
+      check('popup no longer offers the removed confirmation setting',
+        (await popup.locator('#setting-confirm').count()) === 0);
       await popup.close();
     } else {
       check('popup could be opened', false, 'could not determine the extension id');

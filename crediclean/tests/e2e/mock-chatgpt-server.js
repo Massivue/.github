@@ -44,7 +44,7 @@ function ensureCertificate() {
 }
 
 const PAGE = `<!doctype html>
-<html lang="en" class="dark">
+<html lang="en" class="dark" id="root">
 <head><meta charset="utf-8"><title>Mock ChatGPT</title>
 <style>
   body { background:#212121; color:#ececf1; font-family:system-ui; margin:0; }
@@ -73,6 +73,13 @@ const PAGE = `<!doctype html>
       <p>And one without credentials.</p>
       <!-- SHOULD get a button, and should report no credentials. -->
       <img id="unsigned" class="generated" src="/backend-api/estuary/content?id=file-unsigned" alt="Another picture">
+    </div>
+    <div class="turn" data-message-author-role="assistant" data-testid="conversation-turn-6">
+      <p>And one with a very long filename.</p>
+      <!-- Tests that a long name cannot stretch or break the panel. -->
+      <img id="longname" class="generated"
+           src="/backend-api/estuary/content/a-really-extremely-long-generated-image-filename-that-should-be-truncated-in-the-panel-1234567890.png?id=file-signed"
+           alt="Long name picture">
     </div>
   </main>
   <script>
@@ -109,7 +116,7 @@ export function startMockServer({ port = 443, images }) {
         return;
       }
 
-      if (url.pathname === '/backend-api/estuary/content') {
+      if (url.pathname.startsWith('/backend-api/estuary/content')) {
         const id = url.searchParams.get('id');
         const body = images[id];
         if (!body) {

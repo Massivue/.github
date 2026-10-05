@@ -44,13 +44,13 @@ from. That is the point of the tool, and it is worth being deliberate about.
 - Finds generated images in a ChatGPT conversation, including ones that stream
   in after the page has loaded.
 - Adds a small, unobtrusive button to each one. Light and dark themes.
-- Shows what the image contains: format, dimensions, which credentials are
-  present, what tool signed them, and what each part of the credential means in
-  plain language.
-- Removes supported credentials **losslessly** and saves a copy.
-- Checks its own work before giving you the file, and shows you those checks.
+- Shows a compact panel with what you need: whether credentials were found,
+  plus the image's format, dimensions and filename. Nothing technical.
+- Removes supported credentials **losslessly** and saves a copy, from a single
+  button press. There is no second confirmation.
+- Checks its own work before giving you the file, and discards it if a check fails.
 - Leaves your original image completely untouched.
-- Four settings, no account, no analytics.
+- Three settings, no account, no analytics.
 
 ## Supported formats
 
@@ -89,9 +89,10 @@ look for the small **CC** button on the image.
 2. Hover over the image. A small **CC Inspect credentials** button appears at
    the bottom left.
 3. Click it. Within a second or two a panel shows what the image contains.
-4. If credentials were found, choose **Remove credentials and save**.
-5. Confirm, and the processed file saves to your downloads folder as
-   `name-processed.png`.
+4. If credentials were found, click **Remove credentials & save**. The image
+   is processed straight away, with no second confirmation.
+5. The processed file saves to your downloads folder as `name-processed.png`,
+   and the panel confirms it.
 
 Your original image in ChatGPT is never changed.
 
@@ -106,7 +107,6 @@ Click the CrediClean icon in the toolbar.
 |---|---|---|
 | Enable on ChatGPT | On | The master switch. |
 | Show buttons on images | On | Hide the on-image buttons but keep the extension loaded. |
-| Ask before removing | On | Require a confirmation before anything is removed. |
 | Also remove linked XMP data | On | Remove an XMP block that points at the credential. Other XMP fields in the same block, such as author or caption, go with it. |
 
 ## Privacy
@@ -123,7 +123,7 @@ Full detail is in [PRIVACY.md](PRIVACY.md).
 
 | Permission | Why |
 |---|---|
-| `storage` | Remember the four settings above. |
+| `storage` | Remember the three settings above. |
 | `chatgpt.com`, `chat.openai.com` | Show buttons and read your images. |
 | `*.oaiusercontent.com` | ChatGPT serves image files from here. |
 
@@ -169,10 +169,10 @@ checks in the panel after every removal.
 ## Testing
 
 ```bash
-npm test                 # 91 unit tests
+npm test                 # 95 unit tests
 npm run fetch-samples    # download real C2PA-signed images
 npm test                 # now includes tests against those real files
-npm run test:e2e         # 37 checks in a real Chromium with the extension loaded
+npm run test:e2e         # 58 checks in a real Chromium with the extension loaded
 npm run verify           # check the manifest matches the code
 ```
 

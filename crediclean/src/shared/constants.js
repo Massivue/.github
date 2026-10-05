@@ -26,23 +26,9 @@ export const DEFAULT_SETTINGS = {
   enabled: true,
   /** Show the per-image action button. */
   showImageButtons: true,
-  /** Ask for confirmation before removing credentials. */
-  confirmBeforeProcessing: true,
   /**
    * Also remove an XMP packet when it carries a provenance reference to the
    * manifest being removed. See credential-processor.js for the trade-off.
    */
   removeXmpProvenanceReference: true,
-};
-
-/** Plain-language explanations of the assertion labels we are likely to meet. */
-export const ASSERTION_EXPLANATIONS = {
-  'c2pa.actions': 'A record of what was done to the image, such as "created" or "edited".',
-  'c2pa.hash.data': 'A checksum used to detect whether the image has been altered since signing.',
-  'c2pa.ingredient': 'A reference to another image that was used to make this one.',
-  'c2pa.thumbnail.claim.jpeg': 'A small preview of the image, stored inside the credential.',
-  'c2pa.thumbnail.claim.png': 'A small preview of the image, stored inside the credential.',
-  'stds.schema-org.CreativeWork': 'Authorship and publisher details, in a standard web format.',
-  'c2pa.training-mining': 'Whether the creator permits this image to be used for AI training.',
-  'com.openai.dalle': 'A note that the image was produced by an OpenAI image model.',
 };

@@ -88,7 +88,7 @@ Fewer than expected:
 
 | Permission | Why |
 |---|---|
-| `storage` | Remember four settings. |
+| `storage` | Remember three settings. |
 | `chatgpt.com`, `chat.openai.com` | Show buttons, read images. |
 | `*.oaiusercontent.com` | ChatGPT serves image files from here. |
 

@@ -10,10 +10,10 @@ Nothing is marked Passed unless it was actually run and actually passed.
 ```bash
 cd crediclean
 
-npm test                   # 91 unit tests, no network, no browser
+npm test                   # 95 unit tests, no network, no browser
 npm run fetch-samples      # download real C2PA-signed images (optional)
 npm test                   # now also runs 13 tests against those real files
-npm run test:e2e           # 37 checks in a real Chromium with the extension loaded
+npm run test:e2e           # 58 checks in a real Chromium with the extension loaded
 npm run verify             # check the manifest against the code
 ```
 
@@ -24,9 +24,9 @@ Playwright and the ability to listen on port 443.
 
 | Suite | Checks | Result |
 |---|---|---|
-| Unit tests (synthetic fixtures) | 78 | **Passed** |
+| Unit tests (synthetic fixtures) | 82 | **Passed** |
 | Unit tests (real signed images) | 13 | **Passed** |
-| Browser tests (real Chromium, extension loaded) | 37 | **Passed** |
+| Browser tests (real Chromium, extension loaded) | 58 | **Passed** |
 | Independent check with ImageMagick | 3 images | **Passed** |
 | Live ChatGPT website | — | **Blocked**: no account in this environment |
 
@@ -158,11 +158,21 @@ a manifest split across two JPEG segments was only being read as far as the
 first segment. It was caught by testing against a real signed file rather than
 one we had built ourselves, which is the reason those tests exist.
 
+## Confirmed on the live site
+
+**Version 0.1.0 was installed in Chrome and run against the real ChatGPT**, by
+the product owner. The button appeared on a generated image, the panel opened,
+and Content Credentials were correctly detected. That closes the gap this
+section previously described.
+
+What is still only tested against our reconstruction of ChatGPT's markup is the
+full removal-and-download path on the live site, and behaviour across many
+different conversation layouts.
+
 ## The limitation that matters most
 
-**None of this touches the real ChatGPT website.** This environment has no
-ChatGPT account, so the detection rules have only been tested against our own
-reconstruction of ChatGPT's markup.
+The detection rules are matched against a page we do not control and which can
+change without notice.
 
 Please run these five manual checks:
 

@@ -58,7 +58,7 @@ Two design decisions worth recording:
 
 ## Milestone 4: Testing
 
-91 unit tests, all passing. 13 of them run against real signed images.
+Unit tests all passing, 13 of them against real signed images.
 
 Then, unexpectedly, a **real browser test**: Chromium is available in this
 environment, so the extension is loaded into it for real, with `chatgpt.com`
@@ -81,6 +81,56 @@ A usability problem was also found and fixed: on a long report the action
 buttons sat below the fold, so the panel's action row is now pinned to the
 bottom.
 
+## Milestone 5: Live confirmation, simplification and a real bug fix
+
+**5 October 2026.**
+
+The product owner installed version 0.1.0 in Chrome and ran it against the real
+ChatGPT. The button appeared on a generated image and Content Credentials were
+correctly detected. That closed the one gap the build could not close itself.
+
+Two problems came out of that first real use.
+
+### The service worker was throwing on every install
+
+`chrome://extensions` showed an error:
+
+> Uncaught (in promise) TypeError: import() is disallowed on
+> ServiceWorkerGlobalScope by the HTML specification.
+
+The cause was a dynamic `await import('../shared/constants.js')` inside the
+`onInstalled` handler. Dynamic import is forbidden in a service worker.
+
+The fix was small because the architecture was already right: the worker is
+declared `"type": "module"`, and two static imports at the top of the file were
+working fine. The two names the handler needed were folded into one of them and
+the dynamic import deleted. No manifest change, no new architecture, nothing
+suppressed.
+
+The handler had been failing silently in the sense that the extension still
+worked, but the default settings were never seeded on install. The test for
+this now checks exactly that: after a fresh install, the defaults must be in
+storage, which can only happen if the handler ran to its end.
+
+### The panel was a developer tool, not a consumer one
+
+It showed the manifest contents, the assertion labels, the signer, the
+verification checks and three paragraphs of caveats. It was 506px tall and
+scrolled. It also asked for confirmation twice.
+
+Rewritten to show one status line, three facts (format, size, filename) and one
+button. 392px wide, 256px tall, no scrolling. The second confirmation is gone
+entirely: the labelled button is the confirmation, and since the original image
+is never modified, the action is not destructive.
+
+One short line of caveat was kept, carrying the single fact most often got
+wrong: that removing metadata does not touch watermarks inside the picture.
+Everything else technical was removed.
+
+The browser test grew from 37 checks to 58, and now asserts the absence of the
+technical sections as explicitly as it asserts the presence of the three facts,
+so the panel cannot quietly grow back into an inspector.
+
 ## Where things stand
 
 **Working and verified:**
@@ -88,7 +138,7 @@ bottom.
 - Inspecting and removing credentials in PNG and JPEG, losslessly.
 - Independent confirmation of losslessness (ImageMagick, zero differing pixels).
 - The complete workflow in a real browser, through to a verified download.
-- 91 unit tests and 37 browser checks, all passing.
+- 95 unit tests and 58 browser checks, all passing.
 - Minimum permissions, checked against the code automatically.
 
 **Implemented but not verified:**
@@ -96,12 +146,15 @@ bottom.
 - **WebP removal.** No real C2PA-signed WebP could be found to test against.
   Written from the specification and passing our own tests only.
 
-**Not done, and needing a person:**
+**Confirmed on the live site:**
 
-- **Testing against the live ChatGPT website.** This environment has no ChatGPT
-  account. Everything after the image is obtained is thoroughly tested; what is
-  untested is whether the rules for spotting a generated image match the real
-  page today. Five manual steps are in `docs/TESTING.md`.
+- Detection and inspection were verified by the product owner against the real
+  ChatGPT on 5 October 2026.
+
+**Still only tested against a reconstruction:**
+
+- The removal-and-download path on the live site, and behaviour across many
+  different conversation layouts.
 
 **Deliberately not built:**
 

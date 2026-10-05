@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildFilename } from '../src/processing/download-manager.js';
+import { buildFilename, sourceFilename } from '../src/processing/download-manager.js';
 import { FORMAT } from '../src/formats/detect.js';
 
 const FIXED_DATE = new Date('2026-03-04T09:08:07Z');
@@ -83,4 +83,40 @@ test('very long names are shortened', () => {
 test('an unsupported format still produces a sensible name', () => {
   const name = buildFilename({ url: 'https://example.com/thing.gif', format: FORMAT.GIF });
   assert.equal(name, 'thing-processed.gif');
+});
+
+/* The panel's "File" row shows the image's own name, with no suffix. */
+
+test('source filename has no processing suffix', () => {
+  const name = sourceFilename({
+    url: 'https://files.oaiusercontent.com/file-1/image-1234.png',
+    format: FORMAT.PNG,
+  });
+  assert.equal(name, 'image-1234.png');
+});
+
+test('source filename still corrects the extension to the real format', () => {
+  const name = sourceFilename({
+    url: 'https://files.oaiusercontent.com/file-1/photo.png',
+    format: FORMAT.WEBP,
+  });
+  assert.equal(name, 'photo.webp');
+});
+
+test('source filename falls back when the URL carries no name', () => {
+  const name = sourceFilename({
+    url: 'https://chatgpt.com/backend-api/estuary/content?id=file-9',
+    format: FORMAT.PNG,
+    altText: 'A mountain at dusk',
+  });
+  assert.equal(name, 'content.png');
+});
+
+test('a very long source filename is capped so it cannot break the panel', () => {
+  const name = sourceFilename({
+    url: `https://files.oaiusercontent.com/${'a'.repeat(300)}.png`,
+    format: FORMAT.PNG,
+  });
+  assert.ok(name.length <= 84, `name was ${name.length} characters`);
+  assert.ok(name.endsWith('.png'));
 });

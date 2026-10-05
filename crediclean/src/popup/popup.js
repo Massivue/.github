@@ -12,7 +12,6 @@ import { CHATGPT_HOSTS } from '../shared/constants.js';
 const fields = {
   enabled: document.getElementById('setting-enabled'),
   showImageButtons: document.getElementById('setting-buttons'),
-  confirmBeforeProcessing: document.getElementById('setting-confirm'),
   removeXmpProvenanceReference: document.getElementById('setting-xmp'),
 };
 

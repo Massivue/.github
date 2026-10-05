@@ -11,7 +11,7 @@
  */
 
 import { MESSAGE, ERROR_CODE, bytesToBase64 } from '../shared/messages.js';
-import { SIZE_LIMITS, FETCH_TIMEOUT_MS } from '../shared/constants.js';
+import { SIZE_LIMITS, FETCH_TIMEOUT_MS, STORAGE_KEY, DEFAULT_SETTINGS } from '../shared/constants.js';
 
 /** Hosts we are willing to fetch from. Must stay in step with host_permissions. */
 const ALLOWED_HOST_SUFFIXES = [
@@ -102,9 +102,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return false;
 });
 
-// Seed default settings on first install so the popup never shows a blank state.
+/*
+ * Seed default settings on first install so the popup never shows a blank state.
+ *
+ * NOTE: everything this listener needs is imported statically at the top of the
+ * file. Dynamic `import()` is forbidden inside a service worker by the HTML
+ * specification (https://github.com/w3c/ServiceWorker/issues/1356), and using
+ * it here previously raised an uncaught TypeError on every install. The worker
+ * is declared as `"type": "module"` in the manifest, so static imports are the
+ * correct and supported way to pull anything in.
+ */
 chrome.runtime.onInstalled.addListener(async () => {
-  const { STORAGE_KEY, DEFAULT_SETTINGS } = await import('../shared/constants.js');
   const stored = await chrome.storage.sync.get(STORAGE_KEY);
   if (!stored || !stored[STORAGE_KEY]) {
     await chrome.storage.sync.set({ [STORAGE_KEY]: DEFAULT_SETTINGS });

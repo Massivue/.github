@@ -9,26 +9,19 @@
  */
 
 import { STATUS } from '../processing/metadata-inspector.js';
-import { ASSERTION_EXPLANATIONS, PRODUCT_NAME } from '../shared/constants.js';
+import { PRODUCT_NAME } from '../shared/constants.js';
 import { HANDLED_ATTRIBUTE } from './image-detector.js';
 
+/**
+ * One short line per outcome. Deliberately plain: the panel is a consumer
+ * tool, not a credential inspector, so it states what was found and nothing
+ * about how the underlying standard works.
+ */
 const STATUS_TEXT = {
-  [STATUS.CREDENTIALS_DETECTED]: {
-    title: 'Content Credentials found',
-    tone: 'found',
-  },
-  [STATUS.NO_CREDENTIALS_DETECTED]: {
-    title: 'No supported credentials found',
-    tone: 'clear',
-  },
-  [STATUS.UNSUPPORTED_FORMAT]: {
-    title: 'This image format is not supported',
-    tone: 'warn',
-  },
-  [STATUS.UNREADABLE]: {
-    title: 'This image could not be inspected',
-    tone: 'warn',
-  },
+  [STATUS.CREDENTIALS_DETECTED]: { title: 'Content Credentials found', tone: 'found' },
+  [STATUS.NO_CREDENTIALS_DETECTED]: { title: 'No supported credentials found', tone: 'clear' },
+  [STATUS.UNSUPPORTED_FORMAT]: { title: 'This image format is not supported', tone: 'warn' },
+  [STATUS.UNREADABLE]: { title: "Couldn't read this image", tone: 'warn' },
 };
 
 function element(tag, className, text) {
@@ -200,200 +193,162 @@ export class ButtonManager {
 }
 
 /* ------------------------------------------------------------------------- */
-/* Panel content builders                                                     */
+/* Panel content                                                              */
 /* ------------------------------------------------------------------------- */
 
-/** Render a short error state. */
+/**
+ * Render the whole panel body for a given state.
+ *
+ * There is one renderer rather than several, so every phase of the flow shares
+ * exactly the same layout and the panel never jumps around as the user moves
+ * through it. The caller re-invokes this with a new `phase` instead of patching
+ * individual nodes.
+ *
+ * @param {HTMLElement} body the panel body element
+ * @param {object} state
+ * @param {object} state.report the inspection report
+ * @param {string} state.filename the image's own filename, for display
+ * @param {'ready'|'working'|'saved'|'error'} state.phase
+ * @param {string} [state.message] error text, used only in the error phase
+ * @param {() => void} [state.onRemove]
+ * @param {() => void} [state.onClose]
+ */
+export function renderPanel(body, state) {
+  const { report, filename, phase } = state;
+  body.replaceChildren();
+
+  if (phase === 'error') {
+    body.append(statusLine('warn', "Couldn't process this image"));
+    body.append(element('p', 'cc-hint', state.message || 'Please try again.'));
+    body.append(singleButton('Close', state.onClose, 'cc-button'));
+    return;
+  }
+
+  const canRemove = report.status === STATUS.CREDENTIALS_DETECTED;
+
+  // 1. One short status line.
+  if (phase === 'saved') {
+    body.append(statusLine('clear', 'Credentials removed and image saved'));
+  } else {
+    const descriptor = STATUS_TEXT[report.status] || STATUS_TEXT[STATUS.UNREADABLE];
+    body.append(statusLine(descriptor.tone, descriptor.title));
+  }
+
+  // 2. The only three details a user needs.
+  body.append(renderFacts(report, filename));
+
+  // 3. One action.
+  if (phase === 'saved') {
+    const done = element('button', 'cc-button cc-button--primary cc-button--done', 'Saved \u2713');
+    done.type = 'button';
+    done.disabled = true;
+    body.append(wrapAction(done));
+    body.append(element('p', 'cc-hint', `Saved as ${filename ? withSuffix(filename) : 'a new file'}. Your original is unchanged.`));
+    return;
+  }
+
+  if (!canRemove) {
+    // Nothing to remove, so offer only a way out. Never imply anything was done.
+    if (report.status === STATUS.NO_CREDENTIALS_DETECTED) {
+      body.append(element('p', 'cc-hint', 'There is nothing to remove from this image.'));
+    } else if (report.structureError) {
+      body.append(element('p', 'cc-hint', report.structureError));
+    }
+    body.append(singleButton('Close', state.onClose, 'cc-button'));
+    return;
+  }
+
+  const working = phase === 'working';
+  const remove = element(
+    'button',
+    `cc-button cc-button--primary${working ? ' cc-button--busy' : ''}`,
+    working ? 'Removing\u2026' : 'Remove credentials & save',
+  );
+  remove.type = 'button';
+  remove.disabled = working;
+  if (working) remove.setAttribute('aria-busy', 'true');
+  if (!working && state.onRemove) {
+    remove.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      state.onRemove();
+    });
+  }
+  body.append(wrapAction(remove));
+
+  // One short line. It carries the single caveat that matters most, because
+  // metadata removal is routinely mistaken for making an image untraceable.
+  body.append(
+    element('p', 'cc-hint', 'Removes supported credentials. Watermarks inside the picture are not affected.'),
+  );
+}
+
+/** The three facts, and only these three. */
+function renderFacts(report, filename) {
+  const facts = element('dl', 'cc-facts');
+
+  addFact(facts, 'Format', report.formatLabel);
+  addFact(
+    facts,
+    'Size',
+    report.dimensions ? `${report.dimensions.width} \u00d7 ${report.dimensions.height}` : 'Unknown',
+  );
+
+  const fileValue = addFact(facts, 'File', filename || 'Unknown');
+  if (filename) {
+    // A long name must not stretch the panel, but the user should still be
+    // able to read it in full.
+    fileValue.classList.add('cc-truncate');
+    fileValue.title = filename;
+  }
+  return facts;
+}
+
+/** A status line: a coloured dot plus text, so colour is never the only signal. */
+export function statusLine(tone, text) {
+  const line = element('div', `cc-status cc-status--${tone}`);
+  const dot = element('span', 'cc-status__dot');
+  dot.setAttribute('aria-hidden', 'true');
+  line.append(dot, element('span', 'cc-status__text', text));
+  return line;
+}
+
+function wrapAction(button) {
+  const row = element('div', 'cc-actions');
+  row.append(button);
+  return row;
+}
+
+function singleButton(label, onClick, className) {
+  const button = element('button', className, label);
+  button.type = 'button';
+  if (onClick) {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onClick();
+    });
+  }
+  return wrapAction(button);
+}
+
+/** Show the saved name rather than the source name once a file has been written. */
+function withSuffix(filename) {
+  return filename.replace(/(\.[A-Za-z0-9]+)$/, '-processed$1');
+}
+
+/** Render a short error state, used before a report exists. */
 export function renderError(body, message) {
   body.replaceChildren();
-  body.append(statusBlock('warn', 'Something went wrong', message));
-}
-
-/** Render the inspection report. */
-export function renderReport(body, report, actions) {
-  body.replaceChildren();
-
-  const descriptor = STATUS_TEXT[report.status] || STATUS_TEXT[STATUS.UNREADABLE];
-  const summary =
-    report.status === STATUS.CREDENTIALS_DETECTED
-      ? 'This image carries embedded Content Credentials describing where it came from.'
-      : report.status === STATUS.NO_CREDENTIALS_DETECTED
-        ? 'We did not find any Content Credentials in the places this extension knows how to look.'
-        : report.structureError || 'No further detail is available.';
-
-  body.append(statusBlock(descriptor.tone, descriptor.title, summary));
-
-  // File facts.
-  const facts = element('dl', 'cc-facts');
-  addFact(facts, 'Format', report.formatLabel);
-  if (report.dimensions) {
-    addFact(facts, 'Size', `${report.dimensions.width} x ${report.dimensions.height} pixels`);
-  }
-  addFact(facts, 'File', formatBytes(report.byteLength));
-  body.append(facts);
-
-  if (report.status === STATUS.CREDENTIALS_DETECTED) {
-    body.append(renderCredentialDetail(report));
-  }
-
-  if (report.otherMetadata.length > 0) {
-    const section = element('div', 'cc-section');
-    section.append(element('h3', 'cc-section__title', 'Other metadata'));
-    const list = element('ul', 'cc-list');
-    for (const entry of report.otherMetadata) {
-      const item = element('li', null, `${entry.label} (${formatBytes(entry.bytes)})`);
-      if (entry.hasProvenanceReference) {
-        item.append(element('span', 'cc-tag', 'links to the credential'));
-      }
-      list.append(item);
-    }
-    section.append(list);
-    body.append(section);
-  }
-
-  for (const warning of report.warnings) {
-    body.append(element('p', 'cc-note cc-note--warn', warning));
-  }
-
-  body.append(renderHonestyNote(report));
-
-  if (actions) body.append(actions);
-}
-
-function renderCredentialDetail(report) {
-  const section = element('div', 'cc-section');
-  section.append(element('h3', 'cc-section__title', 'What was found'));
-
-  const list = element('ul', 'cc-list');
-  for (const location of report.c2pa.locations) {
-    list.append(element('li', null, `${location.location} - ${formatBytes(location.bytes)}`));
-  }
-  if (report.c2pa.manifestCount > 0) {
-    list.append(
-      element(
-        'li',
-        null,
-        report.c2pa.manifestCount === 1
-          ? '1 credential record (manifest)'
-          : `${report.c2pa.manifestCount} credential records (manifests)`,
-      ),
-    );
-  }
-  section.append(list);
-
-  // Claim generator: the tool that signed the credential, read from the file.
-  for (const generator of report.c2pa.claimGenerators) {
-    const line = element('p', 'cc-note');
-    line.append(element('strong', null, 'Signed by: '));
-    line.append(document.createTextNode(generator));
-    section.append(line);
-  }
-
-  if (report.c2pa.assertionLabels.length > 0) {
-    section.append(element('h4', 'cc-section__subtitle', 'The credential states:'));
-    const details = element('ul', 'cc-list cc-list--detail');
-    for (const label of report.c2pa.assertionLabels) {
-      const item = element('li');
-      item.append(element('code', 'cc-code', label));
-      const explanation = ASSERTION_EXPLANATIONS[label];
-      if (explanation) item.append(element('span', 'cc-explain', explanation));
-      details.append(item);
-    }
-    section.append(details);
-  }
-
-  return section;
-}
-
-/**
- * The honesty note. This is not decoration: it is the part that stops the
- * product overstating what it has done. Do not remove it.
- */
-function renderHonestyNote(report) {
-  const note = element('div', 'cc-honesty');
-  if (report.status === STATUS.NO_CREDENTIALS_DETECTED) {
-    note.append(
-      element(
-        'p',
-        null,
-        'This means no credentials were found in this file, in the places this version checks. It is not proof the image never had any.',
-      ),
-    );
-  }
-  note.append(
-    element(
-      'p',
-      null,
-      'Removing metadata does not remove any invisible watermark that may be present in the pixels themselves. CrediClean cannot see or change those.',
-    ),
-  );
-  note.append(
-    element(
-      'p',
-      null,
-      'We check that a credential is present and read its labels. We do not check whether it is cryptographically valid.',
-    ),
-  );
-  return note;
-}
-
-/** Render the outcome of a removal, including the verification checks. */
-export function renderProcessed(body, result, filename) {
-  body.replaceChildren();
-
-  body.append(
-    statusBlock(
-      'clear',
-      'Credentials removed and file saved',
-      `Saved as ${filename}. Your original image on ChatGPT is unchanged.`,
-    ),
-  );
-
-  const section = element('div', 'cc-section');
-  section.append(element('h3', 'cc-section__title', 'What was removed'));
-  const list = element('ul', 'cc-list');
-  for (const item of result.removed) {
-    const entry = element('li', null, `${item.label} - ${formatBytes(item.bytes)} (${item.location})`);
-    if (item.note) entry.append(element('span', 'cc-explain', item.note));
-    list.append(entry);
-  }
-  section.append(list);
-  body.append(section);
-
-  const checks = element('div', 'cc-section');
-  checks.append(element('h3', 'cc-section__title', 'Checks run on the saved file'));
-  const checkList = element('ul', 'cc-checks');
-  for (const check of result.verification.checks) {
-    const item = element('li', check.passed ? 'cc-check cc-check--pass' : 'cc-check cc-check--fail');
-    item.append(element('span', 'cc-check__icon', check.passed ? '✓' : '✗'));
-    const text = element('span');
-    text.append(element('strong', null, check.name));
-    text.append(element('span', 'cc-explain', check.detail));
-    item.append(text);
-    checkList.append(item);
-  }
-  checks.append(checkList);
-  body.append(checks);
-
-  body.append(
-    element(
-      'p',
-      'cc-honesty',
-      'Removing these credentials removes information about where the image came from. It does not make the image undetectable as AI-generated, and it does not affect any invisible watermark in the pixels.',
-    ),
-  );
-}
-
-export function statusBlock(tone, title, detail) {
-  const block = element('div', `cc-status cc-status--${tone}`);
-  block.append(element('div', 'cc-status__title', title));
-  if (detail) block.append(element('div', 'cc-status__detail', detail));
-  return block;
+  body.append(statusLine('warn', "Couldn't process this image"));
+  body.append(element('p', 'cc-hint', message || 'Please try again.'));
 }
 
 export function addFact(list, label, value) {
   list.append(element('dt', null, label));
-  list.append(element('dd', null, value));
+  const dd = element('dd', null, value);
+  list.append(dd);
+  return dd;
 }
 
 export { element as createElement, formatBytes };

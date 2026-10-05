@@ -32,8 +32,8 @@ no fonts, no trackers and no analytics.
 
 ## What is stored
 
-Four settings: whether the extension is on, whether to show buttons on images,
-whether to confirm before removing, and whether to remove linked XMP data.
+Three settings: whether the extension is on, whether to show buttons on
+images, and whether to remove linked XMP data.
 
 These are stored with Chrome's `storage.sync` API, which means Chrome may sync
 them between your own signed-in Chrome installations. They contain no personal
@@ -46,7 +46,7 @@ Uninstalling the extension removes them.
 
 | Permission | Why |
 |---|---|
-| `storage` | To remember the four settings above. |
+| `storage` | To remember the three settings above. |
 | `https://chatgpt.com/*`, `https://chat.openai.com/*` | To show buttons on images in your conversation, and to read the image file. |
 | `https://*.oaiusercontent.com/*` | ChatGPT serves image files from this domain, so the extension needs to read from it to get the file you clicked on. |
 

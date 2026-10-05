@@ -58,6 +58,17 @@ export function buildFilename({ url, format, altText, suffix = '-processed', now
 }
 
 /**
+ * The image's own filename, with no processing suffix. Shown in the panel so
+ * the user can tell which image they are looking at.
+ *
+ * @param {{url: string, format: string, altText?: string}} args
+ * @returns {string}
+ */
+export function sourceFilename({ url, format, altText }) {
+  return buildFilename({ url, format, altText, suffix: '' });
+}
+
+/**
  * Trigger a download of these bytes.
  *
  * @param {Uint8Array} bytes
